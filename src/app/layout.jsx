@@ -1,14 +1,16 @@
 import "./globals.css";
 
 export const metadata = {
-  title: "Platform Kursus",
-  description: "Platform kursus online: belajar, mengajar, dan memantau progres dalam satu tempat.",
+  title: "RuangKode — Platform Kursus Coding",
+  description: "Belajar pemrograman secara runut dan interaktif di RuangKode.",
 };
 
 export default function RootLayout({ children }) {
   return (
     <html lang="id">
-      <body className="min-h-screen bg-slate-50 text-slate-900">{children}</body>
+      <body className="min-h-screen bg-[#0E0A1E] text-slate-100 antialiased selection:bg-[#F806CC]/30 selection:text-white">
+        {children}
+      </body>
     </html>
   );
 }
