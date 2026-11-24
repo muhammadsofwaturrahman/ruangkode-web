@@ -37,9 +37,9 @@ export default async function AdminPage({ searchParams }) {
   );
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <Navbar user={session} />
-      <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+    <div className="min-h-screen bg-[#0E0A1E] text-slate-100">
+  <Navbar user={session} />
+    <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-slate-900">Dashboard Admin</h1>
           <p className="text-sm text-slate-500">
