@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import pool from "@/lib/db";
 import { getSession } from "@/lib/session";
 import Navbar from "@/components/Navbar";
@@ -12,208 +12,274 @@ export default async function ProfilePage() {
     redirect("/login");
   }
 
-  // Ambil data user terbaru langsung dari database + cek kondisi approved_at < 24 jam
+  // 1. Ambil data terbaru user
   const userRes = await pool.query(
-    `SELECT id, username, email, role, teacher_status, approved_at,
-            (role = 'teacher' AND approved_at IS NOT NULL AND approved_at >= NOW() - INTERVAL '24 hours') AS is_new_teacher
+    `SELECT id, username, email, role
      FROM users
      WHERE id = $1`,
     [session.id]
   );
 
   const user = userRes.rows[0];
-  if (!user) redirect("/login");
+  if (!user) {
+    redirect("/login");
+  }
 
- // Query kursus yang diikuti oleh user (sebagai Student)
-  const enrolledRes = await pool.query(
-    `SELECT c.id, c.nama_course, cat.name AS category_name,
+  // 2. Ambil daftar kursus yang diikuti user beserta progres belajarnya
+  const enrolledCoursesRes = await pool.query(
+    `SELECT c.id, c.nama_course, c.deskripsi,
+            cat.name AS category_name,
+            t.username AS teacher_name,
             COUNT(DISTINCT cnt.id) AS total_materi,
-            COUNT(DISTINCT cp.content_id) AS selesai_materi
+            COUNT(DISTINCT cp.content_id) AS selesai_materi,
+            cert.certificate_code
      FROM enrollments e
      JOIN courses c ON e.course_id = c.id
      LEFT JOIN categories cat ON c.category_id = cat.id
+     LEFT JOIN users t ON c.teacher_id = t.id
      LEFT JOIN contents cnt ON cnt.course_id = c.id
      LEFT JOIN content_progress cp ON cp.content_id = cnt.id AND cp.student_id = $1
+     LEFT JOIN certificates cert ON cert.course_id = c.id AND cert.student_id = $1
      WHERE e.student_id = $1
-     GROUP BY c.id, cat.name, e.enrolled_at
-     ORDER BY e.enrolled_at DESC`,
+     GROUP BY c.id, cat.name, t.username, cert.certificate_code, e.id
+     ORDER BY e.id DESC`,
     [user.id]
   );
 
-  // Jika Teacher: query kursus yang diajarkan beserta jumlah siswa & rata-rata progres
-  let taughtCourses = [];
-  if (user.role === "teacher") {
-    const taughtRes = await pool.query(
-      `SELECT c.id, c.nama_course, cat.name AS category_name,
-              COUNT(DISTINCT e.student_id) AS total_students,
-              COUNT(DISTINCT cnt.id) AS total_materi
-       FROM courses c
-       LEFT JOIN categories cat ON c.category_id = cat.id
-       LEFT JOIN enrollments e ON e.course_id = c.id
-       LEFT JOIN contents cnt ON cnt.course_id = c.id
-       WHERE c.teacher_id = $1
-       GROUP BY c.id, cat.name
-       ORDER BY c.created_at DESC`,
-      [user.id]
-    );
-    taughtCourses = taughtRes.rows;
-  }
+  // 3. Ambil daftar sertifikat yang sudah diterbitkan untuk user
+  const certsRes = await pool.query(
+    `SELECT cert.certificate_code, cert.issued_at,
+            c.id AS course_id, c.nama_course,
+            cat.name AS category_name
+     FROM certificates cert
+     JOIN courses c ON cert.course_id = c.id
+     LEFT JOIN categories cat ON c.category_id = cat.id
+     WHERE cert.student_id = $1
+     ORDER BY cert.issued_at DESC`,
+    [user.id]
+  );
+
+  const enrolledCourses = enrolledCoursesRes.rows;
+  const certificates = certsRes.rows;
+
+  const roleBadgeClass =
+    user.role === "admin"
+      ? "border-amber-400/40 bg-amber-500/15 text-amber-300"
+      : user.role === "teacher"
+      ? "border-purple-400/40 bg-purple-500/15 text-purple-300"
+      : "border-fuchsia-400/40 bg-fuchsia-500/15 text-fuchsia-300";
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <Navbar user={user} />
-      <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6">
-        {/* Alert Welcome Teacher (Muncul jika di-approve kurang dari 24 jam) */}
-        {user.is_new_teacher && (
-          <div className="mb-6 rounded-xl border border-emerald-300 bg-emerald-50 p-4 text-emerald-900 shadow-sm">
-            <h2 className="text-base font-bold">
-              Selamat Datang, Pengajar Baru RuangKode!
-            </h2>
-            <p className="mt-1 text-sm">
-              Akun Anda telah disetujui oleh Admin sebagai <strong>Teacher</strong>. Anda sekarang
-              dapat mulai membuat kursus dan materi pembelajaran melalui{" "}
-              <Link href="/teacher" className="font-semibold underline">
-                Dashboard Teacher
-              </Link>
-              .
-            </p>
-          </div>
-        )}
+    <div className="min-h-screen bg-[#0E0A1E] text-slate-100">
+      <Navbar user={session} />
 
-        {/* Badge Status Pending Teacher */}
-        {user.teacher_status === "pending" && (
-          <div className="mb-6 rounded-xl border border-amber-300 bg-amber-50 p-4 text-amber-900">
-            <span className="inline-block rounded-full bg-amber-200 px-2.5 py-0.5 text-xs font-bold uppercase text-amber-900">
-              Pending Verification
-            </span>
-            <p className="mt-1.5 text-sm font-medium">
-              Akun Pengajar Anda sedang menunggu verifikasi Admin. Sambil menunggu, Anda tetap
-              dapat mengikuti kursus sebagai Student.
-            </p>
-          </div>
-        )}
+      <main className="mx-auto max-w-6xl space-y-8 px-4 py-10 sm:px-6">
+        {/* KARTU PROFIL AKUN */}
+        <section className="relative overflow-hidden rounded-2xl border border-[#2E1A47] bg-[#120D26] p-6 shadow-xl shadow-black/30 sm:p-8">
+          <div className="pointer-events-none absolute -top-20 -right-20 h-56 w-56 rounded-full bg-[#A91079]/15 blur-3xl" />
 
-        {/* Kartu Informasi Profil */}
-        <div className="mb-8 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
+          <div className="relative z-10 flex flex-wrap items-center justify-between gap-4">
             <div>
-              <h1 className="text-2xl font-bold text-slate-900">{user.username}</h1>
-              <p className="text-sm text-slate-500">{user.email}</p>
-              <div className="mt-3 flex items-center gap-2">
-                <span className="rounded-full bg-indigo-100 px-3 py-1 text-xs font-bold uppercase text-indigo-700">
-                  Role: {user.role}
+              <div className="flex items-center gap-3">
+                <h1 className="text-2xl font-black text-white sm:text-3xl">
+                  {user.username}
+                </h1>
+                <span
+                  className={`rounded-full border px-3 py-0.5 text-xs font-bold uppercase tracking-wider ${roleBadgeClass}`}
+                >
+                  {user.role}
                 </span>
               </div>
+              <p className="mt-1 text-sm text-slate-400">{user.email}</p>
             </div>
 
-            {user.role === "teacher" && (
-              <Link
-                href="/teacher"
-                className="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
-              >
-                Kelola Kursus Saya
-              </Link>
-            )}
-            {user.role === "admin" && (
-              <Link
-                href="/admin"
-                className="rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
-              >
-                Buka Dashboard Admin
-              </Link>
-            )}
-          </div>
-        </div>
-
-        {/* Bagian Khusus Teacher: Kursus yang Diajarkan */}
-        {user.role === "teacher" && (
-          <div className="mb-8">
-            <h2 className="mb-4 text-lg font-bold text-slate-900">
-              Kursus yang Anda Ajarkan ({taughtCourses.length})
-            </h2>
-            {taughtCourses.length === 0 ? (
-              <p className="rounded-xl border border-slate-200 bg-white p-5 text-sm text-slate-500">
-                Anda belum membuat kursus apa pun.
-              </p>
-            ) : (
-              <div className="grid gap-4 sm:grid-cols-2">
-                {taughtCourses.map((c) => (
-                  <div
-                    key={c.id}
-                    className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
-                  >
-                    <span className="text-xs font-semibold text-indigo-600">
-                      {c.category_name || "Umum"}
-                    </span>
-                    <h3 className="mt-1 font-bold text-slate-900">{c.nama_course}</h3>
-                    <div className="mt-3 flex gap-4 text-xs text-slate-600">
-                      <span>Total Siswa: <strong>{c.total_students}</strong></span>
-                      <span>Total Materi: <strong>{c.total_materi}</strong></span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Bagian Student: Kursus yang Diikuti & Progress */}
-        <div>
-          <h2 className="mb-4 text-lg font-bold text-slate-900">
-            Kursus yang Diikuti ({enrolledRes.rows.length})
-          </h2>
-          {enrolledRes.rows.length === 0 ? (
-            <div className="rounded-xl border border-slate-200 bg-white p-6 text-center">
-              <p className="text-sm text-slate-600">Anda belum mengikuti kursus apa pun.</p>
+            <div className="flex flex-wrap gap-2.5">
+              {user.role === "admin" && (
+                <Link
+                  href="/admin"
+                  className="rounded-lg border border-amber-400/40 bg-amber-500/10 px-4 py-2 text-xs font-bold text-amber-300 transition hover:bg-amber-500/20"
+                >
+                  Buka Dashboard Admin
+                </Link>
+              )}
+              {user.role === "teacher" && (
+                <Link
+                  href="/teacher"
+                  className="rounded-lg border border-purple-400/40 bg-purple-500/10 px-4 py-2 text-xs font-bold text-purple-300 transition hover:bg-purple-500/20"
+                >
+                  Buka Dashboard Teacher
+                </Link>
+              )}
               <Link
                 href="/courses"
-                className="mt-3 inline-block rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700"
+                className="rounded-lg bg-gradient-to-r from-[#F806CC] to-[#A91079] px-4 py-2 text-xs font-bold text-white shadow-lg shadow-[#F806CC]/20 transition hover:opacity-90"
               >
-                Jelajahi Katalog Kursus
+                Eksplor Katalog Kursus
               </Link>
+            </div>
+          </div>
+
+          {/* Ringkasan Statistik */}
+          <div className="relative z-10 mt-6 grid gap-4 border-t border-[#2E1A47] pt-6 sm:grid-cols-2">
+            <div className="rounded-xl border border-[#2E1A47] bg-[#0E0A1E] p-4">
+              <span className="text-xs text-slate-400">Kursus Diikuti</span>
+              <p className="mt-1 text-2xl font-black text-white">
+                {enrolledCourses.length}
+              </p>
+            </div>
+            <div className="rounded-xl border border-[#2E1A47] bg-[#0E0A1E] p-4">
+              <span className="text-xs text-slate-400">Sertifikat Diraih</span>
+              <p className="mt-1 text-2xl font-black text-amber-400">
+                {certificates.length}
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* DAFTAR SERTIFIKAT KELULUSAN */}
+        <section className="rounded-2xl border border-[#2E1A47] bg-[#120D26] p-6 shadow-lg shadow-black/25">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-bold text-white">Sertifikat Kelulusan</h2>
+              <p className="text-xs text-slate-400">
+                Sertifikat otomatis terbit saat progres belajar pada sebuah kursus mencapai 100%.
+              </p>
+            </div>
+          </div>
+
+          {certificates.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-[#2E1A47] bg-[#0E0A1E]/60 p-6 text-center text-sm text-slate-400">
+              Belum ada sertifikat. Selesaikan 100% materi pada salah satu kursus untuk mendapatkan sertifikat.
             </div>
           ) : (
             <div className="grid gap-4 sm:grid-cols-2">
-              {enrolledRes.rows.map((item) => {
-                const total = Number(item.total_materi);
-                const selesai = Number(item.selesai_materi);
+              {certificates.map((cert) => (
+                <Link
+                  key={cert.certificate_code}
+                  href={`/certificates/${cert.certificate_code}`}
+                  className="group flex items-center justify-between gap-4 rounded-xl border border-amber-400/30 bg-[#0E0A1E] p-4 transition hover:border-amber-400"
+                >
+                  <div className="min-w-0">
+                    {cert.category_name && (
+                      <span className="inline-block rounded-full border border-purple-500/30 bg-purple-950/50 px-2 py-0.5 text-[10px] font-semibold text-purple-300">
+                        {cert.category_name}
+                      </span>
+                    )}
+                    <h3 className="mt-1.5 truncate text-sm font-bold text-white">
+                      {cert.nama_course}
+                    </h3>
+                    <p className="mt-0.5 font-mono text-xs text-amber-400">
+                      {cert.certificate_code}
+                    </p>
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      Diterbitkan:{" "}
+                      {new Date(cert.issued_at).toLocaleDateString("id-ID", {
+                        day: "numeric",
+                        month: "long",
+                        year: "numeric",
+                      })}
+                    </p>
+                  </div>
+                  <span className="shrink-0 text-xs font-bold text-[#F806CC] transition group-hover:translate-x-0.5">
+                    Buka →
+                  </span>
+                </Link>
+              ))}
+            </div>
+          )}
+        </section>
+
+        {/* DAFTAR KURSUS YANG DIIKUTI */}
+        <section className="rounded-2xl border border-[#2E1A47] bg-[#120D26] p-6 shadow-lg shadow-black/25">
+          <h2 className="mb-4 text-lg font-bold text-white">Kursus Saya</h2>
+
+          {enrolledCourses.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-[#2E1A47] bg-[#0E0A1E]/60 p-8 text-center">
+              <p className="text-sm text-slate-400">
+                Anda belum mengikuti kursus apa pun.
+              </p>
+              <Link
+                href="/courses"
+                className="mt-4 inline-block rounded-lg bg-gradient-to-r from-[#F806CC] to-[#A91079] px-5 py-2 text-xs font-bold text-white transition hover:opacity-90"
+              >
+                Cari Kursus Sekarang
+              </Link>
+            </div>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2">
+              {enrolledCourses.map((course) => {
+                const total = Number(course.total_materi);
+                const selesai = Number(course.selesai_materi);
                 const percent = total > 0 ? Math.round((selesai / total) * 100) : 0;
 
                 return (
                   <div
-                    key={item.id}
-                    className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
+                    key={course.id}
+                    className="flex flex-col justify-between rounded-xl border border-[#2E1A47] bg-[#0E0A1E] p-5 transition hover:border-[#A91079]"
                   >
-                    <span className="text-xs font-semibold text-indigo-600">
-                      {item.category_name || "Umum"}
-                    </span>
-                    <h3 className="mt-1 font-bold text-slate-900">{item.nama_course}</h3>
-                    <div className="mt-3">
-                      <div className="mb-1 flex justify-between text-xs text-slate-600">
-                        <span>Progres Belajar</span>
-                        <span className="font-semibold">
-                          {percent}% ({selesai}/{total} materi)
+                    <div>
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <span className="rounded-full border border-purple-500/30 bg-purple-950/50 px-2.5 py-0.5 text-[11px] font-semibold text-purple-300">
+                          {course.category_name || "Umum"}
+                        </span>
+                        <span
+                          className={`text-xs font-bold ${
+                            percent === 100 ? "text-emerald-400" : "text-amber-400"
+                          }`}
+                        >
+                          {percent}% Selesai
                         </span>
                       </div>
-                      <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+
+                      <h3 className="text-base font-bold text-white">
+                        {course.nama_course}
+                      </h3>
+                      <p className="mt-1 line-clamp-2 text-xs text-slate-400">
+                        {course.deskripsi}
+                      </p>
+                      <p className="mt-2 text-[11px] text-slate-500">
+                        Pengajar:{" "}
+                        <span className="text-slate-300">{course.teacher_name}</span>
+                      </p>
+                    </div>
+
+                    <div className="mt-4">
+                      <div className="mb-1.5 flex justify-between text-[11px] text-slate-400">
+                        <span>Progres Materi</span>
+                        <span>
+                          {selesai} / {total} bab
+                        </span>
+                      </div>
+                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#1C143B]">
                         <div
-                          className="h-full bg-emerald-500 transition-all"
+                          className="h-full bg-gradient-to-r from-[#F806CC] to-emerald-400 transition-all"
                           style={{ width: `${percent}%` }}
                         />
                       </div>
+
+                      <div className="mt-4 flex gap-2">
+                        <Link
+                          href={`/courses/${course.id}`}
+                          className="flex-1 rounded-lg bg-[#2E1A47] py-2 text-center text-xs font-bold text-white transition hover:bg-[#A91079]"
+                        >
+                          {percent === 100 ? "Ulas Kembali" : "Lanjutkan Belajar →"}
+                        </Link>
+                        {course.certificate_code && (
+                          <Link
+                            href={`/certificates/${course.certificate_code}`}
+                            className="rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-xs font-bold text-amber-300 transition hover:bg-amber-500/20"
+                          >
+                            Sertifikat
+                          </Link>
+                        )}
+                      </div>
                     </div>
-                    <Link
-                      href={`/courses/${item.id}`}
-                      className="mt-4 inline-block text-sm font-semibold text-indigo-600 hover:underline"
-                    >
-                      Lanjutkan Belajar →
-                    </Link>
                   </div>
                 );
               })}
             </div>
           )}
-        </div>
+        </section>
       </main>
     </div>
   );

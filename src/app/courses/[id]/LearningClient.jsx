@@ -10,6 +10,7 @@ export default function LearningClient({
   activeContent,
   completedIds,
   comments,
+  certificateCode,
 }) {
   const router = useRouter();
   const [commentText, setCommentText] = useState("");
@@ -104,6 +105,21 @@ export default function LearningClient({
           </div>
         </div>
 
+        {/* Tombol Klaim / Lihat Sertifikat di Sidebar jika 100% */}
+        {certificateCode && (
+          <Link
+            href={`/certificates/${certificateCode}`}
+            className="mb-4 block rounded-xl border border-amber-400/40 bg-gradient-to-r from-amber-500/20 to-[#A91079]/20 p-3 text-center transition hover:border-amber-400"
+          >
+            <span className="block text-[11px] font-bold uppercase tracking-wider text-amber-300">
+              Kursus Selesai 100%
+            </span>
+            <span className="mt-0.5 block text-xs font-extrabold text-white">
+              Lihat & Cetak Sertifikat →
+            </span>
+          </Link>
+        )}
+
         <div className="space-y-2 border-t border-[#2E1A47] pt-3">
           {contents.map((c) => {
             const isActive = c.id === activeContent.id;
@@ -170,16 +186,27 @@ export default function LearningClient({
             {activeContent.isi_materi}
           </article>
 
-          {nextContent && (
-            <div className="mt-8 flex justify-end border-t border-[#2E1A47] pt-4">
+          <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-[#2E1A47] pt-4">
+            {certificateCode ? (
+              <Link
+                href={`/certificates/${certificateCode}`}
+                className="rounded-lg border border-amber-400/50 bg-amber-500/15 px-4 py-2.5 text-xs font-bold text-amber-300 transition hover:bg-amber-500/25"
+              >
+                Buka Sertifikat Kelulusan →
+              </Link>
+            ) : (
+              <div />
+            )}
+
+            {nextContent && (
               <Link
                 href={`/courses/${course.id}?materi=${nextContent.id}`}
                 className="rounded-lg bg-gradient-to-r from-[#F806CC] to-[#A91079] px-5 py-2.5 text-xs font-bold text-white shadow-lg transition hover:opacity-90"
               >
                 Bab Berikutnya: {nextContent.judul} →
               </Link>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         {/* FORUM DISKUSI PER MATERI */}
