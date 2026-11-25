@@ -2,40 +2,48 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { formatDateOnly, percentOf } from "@/lib/format";
+import { hasContent, htmlToText } from "@/lib/sanitize";
+import RichTextEditor from "@/components/RichTextEditor";
+
+async function send(url, method, body) {
+  const res = await fetch(url, {
+    method,
+    headers: body ? { "Content-Type": "application/json" } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  let data = {};
+  try {
+    data = await res.json();
+  } catch {
+    // respons bukan JSON
+  }
+  return { ok: res.ok, data };
+}
 
 export default function TeacherClient({ categories, courses, contents, students }) {
   const router = useRouter();
-  const [selectedCourseId, setSelectedCourseId] = useState(courses[0]?.id || null);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
-
-  // State Form Course
-  const [editingCourse, setEditingCourse] = useState(null);
-  const [courseForm, setCourseForm] = useState({
+  const emptyCourse = {
     nama_course: "",
     deskripsi: "",
-    category_id: categories[0]?.id || "",
+    category_id: "",
     start_date: "",
     end_date: "",
-  });
+  };
+  const emptyContent = { judul: "", isi_materi: "", order_index: "" };
 
-  // State Form Materi (Content)
+  const [selectedCourseId, setSelectedCourseId] = useState(courses[0]?.id ?? null);
+  const [flash, setFlash] = useState(null);
+
+  const [editingCourse, setEditingCourse] = useState(null);
+  const [courseForm, setCourseForm] = useState(emptyCourse);
+
   const [editingContent, setEditingContent] = useState(null);
-  const [contentForm, setContentForm] = useState({
-    judul: "",
-    isi_materi: "",
-    order_index: 1,
-  });
+  const [contentForm, setContentForm] = useState(emptyContent);
 
-  function notify(msg, isErr = false) {
-    if (isErr) {
-      setError(msg);
-      setMessage("");
-    } else {
-      setMessage(msg);
-      setError("");
-    }
-    router.refresh();
+  function notify(text, error = false) {
+    setFlash({ text, error });
+    if (!error) router.refresh();
   }
 
   const activeCourse = courses.find((c) => c.id === selectedCourseId) || courses[0] || null;
@@ -46,347 +54,313 @@ export default function TeacherClient({ categories, courses, contents, students 
     ? students.filter((st) => st.course_id === activeCourse.id)
     : [];
 
-  // --- HANDLER COURSE ---
+  /* Kursus */
   async function handleSaveCourse(e) {
     e.preventDefault();
-    const method = editingCourse ? "PUT" : "POST";
-    const payload = editingCourse ? { id: editingCourse.id, ...courseForm } : courseForm;
-
-    const res = await fetch("/api/teacher/courses", {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const data = await res.json();
-    if (!res.ok) return notify(data.error, true);
+    const { ok, data } = editingCourse
+      ? await send("/api/teacher/courses", "PUT", { id: editingCourse.id, ...courseForm })
+      : await send("/api/teacher/courses", "POST", courseForm);
+    if (!ok) return notify(data.error || "Gagal menyimpan kursus.", true);
 
     setEditingCourse(null);
+    setCourseForm(emptyCourse);
+    notify(data.message);
+  }
+
+  async function handleDeleteCourse(course) {
+    if (!confirm(`Hapus kursus "${course.nama_course}" beserta seluruh materi dan progres siswa?`)) {
+      return;
+    }
+    const { ok, data } = await send(`/api/teacher/courses?id=${course.id}`, "DELETE");
+    if (!ok) return notify(data.error || "Gagal menghapus kursus.", true);
+
+    if (selectedCourseId === course.id) setSelectedCourseId(null);
+    if (editingCourse?.id === course.id) {
+      setEditingCourse(null);
+      setCourseForm(emptyCourse);
+    }
+    notify(data.message);
+  }
+
+  function startEditCourse(course) {
+    setEditingCourse(course);
     setCourseForm({
-      nama_course: "",
-      deskripsi: "",
-      category_id: categories[0]?.id || "",
-      start_date: "",
-      end_date: "",
+      nama_course: course.nama_course,
+      deskripsi: course.deskripsi,
+      category_id: course.category_id ? String(course.category_id) : "",
+      start_date: course.start_date || "",
+      end_date: course.end_date || "",
     });
-    notify(data.message);
+    setFlash(null);
   }
 
-  async function handleDeleteCourse(id) {
-    if (!confirm("Hapus kursus ini beserta seluruh materinya?")) return;
-    const res = await fetch(`/api/teacher/courses?id=${id}`, { method: "DELETE" });
-    const data = await res.json();
-    if (!res.ok) return notify(data.error, true);
-
-    if (selectedCourseId === id) setSelectedCourseId(null);
-    notify(data.message);
-  }
-
-  // --- HANDLER MATERI ---
+  /* Materi */
   async function handleSaveContent(e) {
     e.preventDefault();
     if (!activeCourse) return;
+    if (!hasContent(contentForm.isi_materi)) {
+      return notify("Isi materi wajib diisi.", true);
+    }
 
-    const method = editingContent ? "PUT" : "POST";
-    const payload = editingContent
-      ? { id: editingContent.id, ...contentForm }
-      : { course_id: activeCourse.id, ...contentForm };
-
-    const res = await fetch("/api/teacher/contents", {
-      method,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    const data = await res.json();
-    if (!res.ok) return notify(data.error, true);
+    const { ok, data } = editingContent
+      ? await send("/api/teacher/contents", "PUT", { id: editingContent.id, ...contentForm })
+      : await send("/api/teacher/contents", "POST", { course_id: activeCourse.id, ...contentForm });
+    if (!ok) return notify(data.error || "Gagal menyimpan materi.", true);
 
     setEditingContent(null);
-    setContentForm({
-      judul: "",
-      isi_materi: "",
-      order_index: activeContents.length + 2,
-    });
+    setContentForm(emptyContent);
     notify(data.message);
   }
 
-  async function handleDeleteContent(id) {
-    if (!confirm("Hapus materi ini?")) return;
-    const res = await fetch(`/api/teacher/contents?id=${id}`, { method: "DELETE" });
-    const data = await res.json();
-    if (!res.ok) return notify(data.error, true);
+  async function handleDeleteContent(cnt) {
+    if (!confirm(`Hapus materi "${cnt.judul}"?`)) return;
+    const { ok, data } = await send(`/api/teacher/contents?id=${cnt.id}`, "DELETE");
+    if (!ok) return notify(data.error || "Gagal menghapus materi.", true);
+    if (editingContent?.id === cnt.id) {
+      setEditingContent(null);
+      setContentForm(emptyContent);
+    }
     notify(data.message);
   }
 
   return (
-    <div className="space-y-8">
-      {message && (
-        <div className="rounded-xl border border-emerald-500/30 bg-emerald-950/40 px-4 py-3 text-sm text-emerald-300">
-          {message}
+    <div className="mt-10">
+      {flash && (
+        <div
+          role={flash.error ? "alert" : "status"}
+          className={`notice mb-8 ${flash.error ? "notice-err" : "notice-ok"}`}
+        >
+          {flash.text}
         </div>
       )}
-      {error && (
-        <div className="rounded-xl border border-red-500/30 bg-red-950/40 px-4 py-3 text-sm text-red-300">
-          {error}
-        </div>
-      )}
 
-      {/* BAGIAN 1: FORM COURSE & DAFTAR COURSE MILIK TEACHER */}
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="rounded-2xl border border-[#2E1A47] bg-[#120D26] p-5 shadow-lg shadow-black/30">
-          <h2 className="mb-4 text-base font-bold text-white">
-            {editingCourse ? "Edit Kursus" : "Buat Kursus Baru"}
-          </h2>
-          <form onSubmit={handleSaveCourse} className="space-y-3">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-300">Nama Kursus</label>
-              <input
-                type="text"
-                required
-                value={courseForm.nama_course}
-                onChange={(e) => setCourseForm({ ...courseForm, nama_course: e.target.value })}
-                placeholder="Contoh: Algoritma & Struktur Data"
-                className="w-full rounded-lg border border-[#2E1A47] bg-[#0E0A1E] px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-[#A91079] focus:outline-none"
-              />
-            </div>
-
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-300">Kategori</label>
-              <select
-                value={courseForm.category_id}
-                onChange={(e) => setCourseForm({ ...courseForm, category_id: e.target.value })}
-                className="w-full rounded-lg border border-[#2E1A47] bg-[#0E0A1E] px-3 py-2 text-sm text-white focus:border-[#A91079] focus:outline-none"
-              >
-                <option value="" className="bg-[#120D26] text-white">
-                  -- Pilih Kategori --
-                </option>
-                {categories.map((cat) => (
-                  <option key={cat.id} value={cat.id} className="bg-[#120D26] text-white">
-                    {cat.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="mb-1 block text-xs font-medium text-slate-300">Deskripsi</label>
-              <textarea
-                rows={3}
-                required
-                value={courseForm.deskripsi}
-                onChange={(e) => setCourseForm({ ...courseForm, deskripsi: e.target.value })}
-                placeholder="Ringkasan materi yang akan dipelajari..."
-                className="w-full rounded-lg border border-[#2E1A47] bg-[#0E0A1E] px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-[#A91079] focus:outline-none"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
+      {/* Kursus */}
+      <div className="grid gap-10 lg:grid-cols-[19rem_1fr]">
+        <div>
+          <div className="panel">
+            <h2 className="text-xl">{editingCourse ? "Edit kursus" : "Buat kursus"}</h2>
+            <form onSubmit={handleSaveCourse} className="mt-5 space-y-4">
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-300">
-                  Mulai (Opsional)
+                <label htmlFor="t-name" className="label">
+                  Nama kursus
                 </label>
                 <input
-                  type="date"
-                  value={courseForm.start_date}
-                  onChange={(e) => setCourseForm({ ...courseForm, start_date: e.target.value })}
-                  className="w-full rounded-lg border border-[#2E1A47] bg-[#0E0A1E] px-2.5 py-2 text-xs text-white focus:border-[#A91079] focus:outline-none"
+                  id="t-name"
+                  type="text"
+                  required
+                  maxLength={200}
+                  value={courseForm.nama_course}
+                  onChange={(e) => setCourseForm({ ...courseForm, nama_course: e.target.value })}
+                  className="field"
                 />
               </div>
               <div>
-                <label className="mb-1 block text-xs font-medium text-slate-300">
-                  Selesai (Opsional)
+                <label htmlFor="t-cat" className="label">
+                  Kategori
                 </label>
-                <input
-                  type="date"
-                  value={courseForm.end_date}
-                  onChange={(e) => setCourseForm({ ...courseForm, end_date: e.target.value })}
-                  className="w-full rounded-lg border border-[#2E1A47] bg-[#0E0A1E] px-2.5 py-2 text-xs text-white focus:border-[#A91079] focus:outline-none"
-                />
-              </div>
-            </div>
-
-            <div className="flex gap-2 pt-2">
-              <button
-                type="submit"
-                className="flex-1 rounded-lg bg-gradient-to-r from-[#F806CC] to-[#A91079] py-2 text-sm font-bold text-white transition hover:opacity-90"
-              >
-                {editingCourse ? "Update Kursus" : "Simpan Kursus"}
-              </button>
-              {editingCourse && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setEditingCourse(null);
-                    setCourseForm({
-                      nama_course: "",
-                      deskripsi: "",
-                      category_id: categories[0]?.id || "",
-                      start_date: "",
-                      end_date: "",
-                    });
-                  }}
-                  className="rounded-lg border border-[#2E1A47] px-3 py-2 text-sm text-slate-300 hover:bg-[#1C143B]"
+                <select
+                  id="t-cat"
+                  required
+                  value={courseForm.category_id}
+                  onChange={(e) => setCourseForm({ ...courseForm, category_id: e.target.value })}
+                  className="field"
                 >
-                  Batal
+                  <option value="">Pilih kategori</option>
+                  {categories.map((cat) => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label htmlFor="t-desc" className="label">
+                  Deskripsi
+                </label>
+                <textarea
+                  id="t-desc"
+                  rows={4}
+                  required
+                  value={courseForm.deskripsi}
+                  onChange={(e) => setCourseForm({ ...courseForm, deskripsi: e.target.value })}
+                  placeholder="Apa yang akan dipelajari siswa"
+                  className="field"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label htmlFor="t-start" className="label">
+                    Mulai
+                  </label>
+                  <input
+                    id="t-start"
+                    type="date"
+                    value={courseForm.start_date}
+                    onChange={(e) => setCourseForm({ ...courseForm, start_date: e.target.value })}
+                    className="field"
+                  />
+                </div>
+                <div>
+                  <label htmlFor="t-end" className="label">
+                    Selesai
+                  </label>
+                  <input
+                    id="t-end"
+                    type="date"
+                    min={courseForm.start_date || undefined}
+                    value={courseForm.end_date}
+                    onChange={(e) => setCourseForm({ ...courseForm, end_date: e.target.value })}
+                    className="field"
+                  />
+                </div>
+              </div>
+              <p className="hint">Kosongkan tanggal untuk kursus tanpa batas waktu.</p>
+              <div className="flex gap-2 pt-1">
+                <button type="submit" className="btn btn-primary flex-1">
+                  {editingCourse ? "Simpan perubahan" : "Simpan kursus"}
                 </button>
-              )}
-            </div>
-          </form>
+                {editingCourse && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingCourse(null);
+                      setCourseForm(emptyCourse);
+                    }}
+                    className="btn btn-outline"
+                  >
+                    Batal
+                  </button>
+                )}
+              </div>
+            </form>
+          </div>
         </div>
 
-        {/* Daftar Kursus Milik Teacher */}
-        <div className="space-y-3 lg:col-span-2">
-          <h2 className="text-base font-bold text-white">
-            Kursus Anda ({courses.length}) — Klik kartu untuk kelola materi
-          </h2>
+        <div className="min-w-0">
+          <h2 className="text-2xl">Kursus Anda</h2>
 
           {courses.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-[#2E1A47] bg-[#120D26]/60 p-8 text-center text-sm text-slate-400">
-              Anda belum membuat kursus. Gunakan form di samping untuk membuat kursus pertama Anda.
-            </div>
+            <p className="mt-4 max-w-md text-muted">
+              Anda belum punya kursus. Isi formulir di samping untuk membuat kursus pertama, lalu
+              tambahkan materinya.
+            </p>
           ) : (
-            <div className="grid gap-3 sm:grid-cols-2">
+            <ul className="mt-4 border-t border-line">
               {courses.map((course) => {
                 const isSelected = activeCourse?.id === course.id;
+                const hasPeriod = course.start_date || course.end_date;
                 return (
-                  <div
+                  <li
                     key={course.id}
-                    onClick={() => {
-                      setSelectedCourseId(course.id);
-                      setEditingContent(null);
-                    }}
-                    className={`cursor-pointer rounded-2xl border p-4 transition ${
-                      isSelected
-                        ? "border-[#F806CC] bg-[#1C143B] shadow-lg shadow-[#F806CC]/10"
-                        : "border-[#2E1A47] bg-[#120D26] hover:border-[#A91079]"
+                    className={`border-b border-line py-5 pl-4 ${
+                      isSelected ? "border-l-2 border-l-pine" : "border-l-2 border-l-transparent"
                     }`}
                   >
-                    <div className="flex items-start justify-between gap-2">
-                      <span className="rounded-full border border-purple-500/30 bg-purple-950/50 px-2.5 py-0.5 text-xs font-semibold text-purple-300">
-                        {course.category_name || "Umum"}
-                      </span>
-                      <div className="flex gap-1.5" onClick={(e) => e.stopPropagation()}>
+                    <div className="flex flex-wrap items-start justify-between gap-4">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-pine">{course.category_name || "Tanpa kategori"}</p>
+                        <h3 className="mt-0.5 text-xl">{course.nama_course}</h3>
+                        <p className="mt-1.5 flex flex-wrap gap-x-5 gap-y-1 text-sm text-muted">
+                          <span>{course.total_materi} bab</span>
+                          <span>{course.total_students} peserta</span>
+                          {hasPeriod && (
+                            <span>
+                              Periode {formatDateOnly(course.start_date) || "?"} sampai{" "}
+                              {formatDateOnly(course.end_date) || "?"}
+                            </span>
+                          )}
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
                         <button
+                          type="button"
                           onClick={() => {
-                            setEditingCourse(course);
-                            setCourseForm({
-                              nama_course: course.nama_course,
-                              deskripsi: course.deskripsi,
-                              category_id: course.category_id || "",
-                              start_date: course.start_date || "",
-                              end_date: course.end_date || "",
-                            });
+                            setSelectedCourseId(course.id);
+                            setEditingContent(null);
+                            setContentForm(emptyContent);
                           }}
-                          className="rounded border border-[#2E1A47] bg-[#0E0A1E] px-2 py-1 text-xs font-medium text-slate-300 hover:border-amber-400/50 hover:text-white"
+                          disabled={isSelected}
+                          className="btn btn-primary btn-sm"
                         >
+                          {isSelected ? "Sedang dikelola" : "Kelola materi"}
+                        </button>
+                        <button type="button" onClick={() => startEditCourse(course)} className="btn btn-outline btn-sm">
                           Edit
                         </button>
-                        <button
-                          onClick={() => handleDeleteCourse(course.id)}
-                          className="rounded border border-red-500/30 bg-red-950/40 px-2 py-1 text-xs font-medium text-red-400 hover:bg-red-900/50"
-                        >
+                        <button type="button" onClick={() => handleDeleteCourse(course)} className="btn btn-danger btn-sm">
                           Hapus
                         </button>
                       </div>
                     </div>
-
-                    <h3 className="mt-2.5 font-bold text-white">{course.nama_course}</h3>
-                    <p className="mt-1 line-clamp-2 text-xs text-slate-400">{course.deskripsi}</p>
-
-                    <div className="mt-3 flex items-center justify-between border-t border-[#2E1A47] pt-2.5 text-xs text-slate-400">
-                      <span>{course.total_materi} Materi</span>
-                      <span className="font-semibold text-amber-400">
-                        {course.total_students} Siswa Terdaftar
-                      </span>
-                    </div>
-                  </div>
+                  </li>
                 );
               })}
-            </div>
+            </ul>
           )}
         </div>
       </div>
 
-      {/* BAGIAN 2: KELOLA MATERI BERURUTAN & MONITORING SISWA */}
+      {/* Materi dan progres siswa */}
       {activeCourse && (
-        <div className="rounded-2xl border border-[#2E1A47] bg-[#120D26] p-6 shadow-xl shadow-black/30">
-          <div className="mb-6 border-b border-[#2E1A47] pb-4">
-            <span className="text-xs font-bold uppercase tracking-wider text-amber-400">
-              Kursus Aktif
-            </span>
-            <h2 className="mt-0.5 text-xl font-black text-white">{activeCourse.nama_course}</h2>
-          </div>
+        <section className="mt-16 border-t border-line pt-10">
+          <h2 className="text-3xl">{activeCourse.nama_course}</h2>
 
-          <div className="grid gap-8 lg:grid-cols-2">
-            {/* Kolom Kiri: Form & Daftar Materi Berurutan */}
+          <div className="mt-8 grid gap-12 lg:grid-cols-2">
             <div>
-              <h3 className="mb-3 text-base font-bold text-white">
-                {editingContent ? "Edit Materi" : "Tambah Materi Pembelajaran"}
-              </h3>
-              <form
-                onSubmit={handleSaveContent}
-                className="mb-6 space-y-3 rounded-xl border border-[#2E1A47] bg-[#0E0A1E] p-4"
-              >
-                <div className="grid grid-cols-4 gap-2">
-                  <div className="col-span-3">
-                    <label className="mb-1 block text-xs font-medium text-slate-300">
-                      Judul Bab / Materi
+              <h3 className="text-xl">{editingContent ? "Edit materi" : "Tambah materi"}</h3>
+              <form onSubmit={handleSaveContent} className="panel mt-4 space-y-4">
+                <div className="grid grid-cols-[1fr_6rem] gap-3">
+                  <div>
+                    <label htmlFor="m-judul" className="label">
+                      Judul bab
                     </label>
                     <input
+                      id="m-judul"
                       type="text"
                       required
+                      maxLength={200}
                       value={contentForm.judul}
                       onChange={(e) => setContentForm({ ...contentForm, judul: e.target.value })}
-                      placeholder="Contoh: Pengenalan Dasar"
-                      className="w-full rounded-lg border border-[#2E1A47] bg-[#120D26] px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-[#A91079] focus:outline-none"
+                      className="field"
                     />
                   </div>
                   <div>
-                    <label className="mb-1 block text-xs font-medium text-slate-300">Urutan</label>
+                    <label htmlFor="m-urut" className="label">
+                      Urutan
+                    </label>
                     <input
+                      id="m-urut"
                       type="number"
                       min={1}
-                      required
+                      required={!!editingContent}
                       value={contentForm.order_index}
-                      onChange={(e) =>
-                        setContentForm({ ...contentForm, order_index: e.target.value })
-                      }
-                      className="w-full rounded-lg border border-[#2E1A47] bg-[#120D26] px-3 py-2 text-sm text-white focus:border-[#A91079] focus:outline-none"
+                      onChange={(e) => setContentForm({ ...contentForm, order_index: e.target.value })}
+                      placeholder={String(activeContents.length + 1)}
+                      className="field"
                     />
                   </div>
                 </div>
-
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-slate-300">Isi Materi</label>
-                  <textarea
-                    rows={4}
-                    required
+                  <span className="label">Isi materi</span>
+                  <RichTextEditor
                     value={contentForm.isi_materi}
-                    onChange={(e) =>
-                      setContentForm({ ...contentForm, isi_materi: e.target.value })
-                    }
-                    placeholder="Tulis penjelasan materi pembelajaran secara lengkap di sini..."
-                    className="w-full rounded-lg border border-[#2E1A47] bg-[#120D26] px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-[#A91079] focus:outline-none"
+                    onChange={(html) => setContentForm({ ...contentForm, isi_materi: html })}
                   />
+                  <p className="hint">Gambar disisipkan lewat alamat URL (https://...).</p>
+                  <p className="hint">Kosongkan urutan untuk menaruh bab ini di akhir.</p>
                 </div>
-
                 <div className="flex gap-2">
-                  <button
-                    type="submit"
-                    className="rounded-lg bg-gradient-to-r from-[#F806CC] to-[#A91079] px-4 py-2 text-sm font-bold text-white transition hover:opacity-90"
-                  >
-                    {editingContent ? "Simpan Materi" : "Tambah Materi"}
+                  <button type="submit" className="btn btn-primary">
+                    {editingContent ? "Simpan materi" : "Tambah materi"}
                   </button>
                   {editingContent && (
                     <button
                       type="button"
                       onClick={() => {
                         setEditingContent(null);
-                        setContentForm({
-                          judul: "",
-                          isi_materi: "",
-                          order_index: activeContents.length + 1,
-                        });
+                        setContentForm(emptyContent);
                       }}
-                      className="rounded-lg border border-[#2E1A47] px-3 py-2 text-sm text-slate-300 hover:bg-[#1C143B]"
+                      className="btn btn-outline"
                     >
                       Batal
                     </button>
@@ -394,113 +368,77 @@ export default function TeacherClient({ categories, courses, contents, students 
                 </div>
               </form>
 
-              <h4 className="mb-3 text-sm font-bold text-slate-200">
-                Daftar Materi ({activeContents.length})
-              </h4>
+              <h3 className="mt-10 text-xl">Daftar materi</h3>
               {activeContents.length === 0 ? (
-                <p className="text-xs text-slate-500">Belum ada materi pada kursus ini.</p>
+                <p className="mt-3 text-sm text-muted">Belum ada materi pada kursus ini.</p>
               ) : (
-                <div className="space-y-2.5">
+                <ol className="mt-3 border-t border-line">
                   {activeContents.map((cnt) => (
-                    <div
-                      key={cnt.id}
-                      className="flex items-start justify-between gap-3 rounded-xl border border-[#2E1A47] bg-[#0E0A1E] p-3.5"
-                    >
-                      <div>
-                        <span className="text-xs font-bold text-amber-400">
-                          Bab #{cnt.order_index}
-                        </span>
-                        <h5 className="text-sm font-semibold text-white">{cnt.judul}</h5>
-                        <p className="mt-1 line-clamp-2 text-xs text-slate-400">
-                          {cnt.isi_materi}
-                        </p>
+                    <li key={cnt.id} className="flex items-start justify-between gap-4 border-b border-line py-4">
+                      <div className="min-w-0">
+                        <p className="text-sm text-muted">Bab {cnt.order_index}</p>
+                        <p className="font-medium">{cnt.judul}</p>
+                        <p className="mt-1 line-clamp-2 text-sm text-muted">{htmlToText(cnt.isi_materi)}</p>
                       </div>
-                      <div className="flex shrink-0 gap-1.5">
+                      <div className="flex shrink-0 gap-2">
                         <button
+                          type="button"
                           onClick={() => {
                             setEditingContent(cnt);
                             setContentForm({
                               judul: cnt.judul,
                               isi_materi: cnt.isi_materi,
-                              order_index: cnt.order_index,
+                              order_index: String(cnt.order_index),
                             });
+                            setFlash(null);
                           }}
-                          className="rounded border border-[#2E1A47] bg-[#120D26] px-2 py-1 text-xs font-medium text-slate-300 hover:text-white"
+                          className="btn btn-outline btn-sm"
                         >
                           Edit
                         </button>
-                        <button
-                          onClick={() => handleDeleteContent(cnt.id)}
-                          className="rounded border border-red-500/30 bg-red-950/40 px-2 py-1 text-xs font-medium text-red-400 hover:bg-red-900/50"
-                        >
+                        <button type="button" onClick={() => handleDeleteContent(cnt)} className="btn btn-danger btn-sm">
                           Hapus
                         </button>
                       </div>
-                    </div>
+                    </li>
                   ))}
-                </div>
+                </ol>
               )}
             </div>
 
-            {/* Kolom Kanan: Monitoring Siswa & Progres Belajar */}
             <div>
-              <h3 className="mb-3 text-base font-bold text-white">
-                Monitoring Progres Siswa ({activeStudents.length})
-              </h3>
+              <h3 className="text-xl">Progres siswa</h3>
               {activeStudents.length === 0 ? (
-                <div className="rounded-xl border border-dashed border-[#2E1A47] bg-[#0E0A1E]/60 p-6 text-center text-sm text-slate-500">
-                  Belum ada siswa yang mendaftar pada kursus ini.
-                </div>
+                <p className="mt-3 text-sm text-muted">Belum ada siswa yang mengikuti kursus ini.</p>
               ) : (
-                <div className="space-y-3">
+                <ul className="mt-4 border-t border-line">
                   {activeStudents.map((st) => {
-                    const total = Number(st.total_materi);
-                    const selesai = Number(st.selesai_materi);
-                    const percent = total > 0 ? Math.round((selesai / total) * 100) : 0;
-
+                    const percent = percentOf(st.selesai_materi, st.total_materi);
                     return (
-                      <div
-                        key={st.student_id}
-                        className="rounded-xl border border-[#2E1A47] bg-[#0E0A1E] p-4"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <div className="font-semibold text-white">{st.username}</div>
-                            <div className="text-xs text-slate-400">{st.email}</div>
+                      <li key={st.student_id} className="border-b border-line py-4">
+                        <div className="flex items-baseline justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="font-medium">{st.username}</p>
+                            <p className="truncate text-sm text-muted">{st.email}</p>
                           </div>
-                          <span
-                            className={`rounded-full px-2.5 py-0.5 text-xs font-bold ${
-                              percent === 100
-                                ? "border border-emerald-500/30 bg-emerald-950/50 text-emerald-400"
-                                : "border border-purple-500/30 bg-purple-950/50 text-purple-300"
-                            }`}
-                          >
-                            {percent}% Selesai
-                          </span>
+                          <p className="shrink-0 text-sm">
+                            <span className="font-medium">{percent}%</span>
+                          </p>
                         </div>
-
-                        <div className="mt-3">
-                          <div className="mb-1 flex justify-between text-xs text-slate-400">
-                            <span>Materi diselesaikan</span>
-                            <span>
-                              {selesai} / {total} bab
-                            </span>
-                          </div>
-                          <div className="h-2 w-full overflow-hidden rounded-full bg-[#1C143B]">
-                            <div
-                              className="h-full bg-gradient-to-r from-[#F806CC] to-emerald-400 transition-all"
-                              style={{ width: `${percent}%` }}
-                            />
-                          </div>
+                        <div className="progress mt-3">
+                          <span style={{ width: `${percent}%` }} />
                         </div>
-                      </div>
+                        <p className="mt-1.5 text-xs text-muted">
+                          {st.selesai_materi} dari {st.total_materi} bab selesai
+                        </p>
+                      </li>
                     );
                   })}
-                </div>
+                </ul>
               )}
             </div>
           </div>
-        </div>
+        </section>
       )}
     </div>
   );
