@@ -1,36 +1,44 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# RuangKode
 
-## Getting Started
+Platform kursus coding (Tugas Final Praktikum Pemrograman Web 2026, Project 4).
+Dibangun dengan Next.js (App Router, JSX), Tailwind CSS, dan PostgreSQL dengan raw SQL (`pg`).
 
-First, run the development server:
+## Menjalankan
+
+1. Buat database kosong bernama `platform_kursus` di PostgreSQL.
+2. Jalankan `database.sql` (lewat pgAdmin Query Tool atau `psql -d platform_kursus -f database.sql`).
+3. Salin `.env.example` menjadi `.env.local`, lalu isi `DATABASE_URL` dan `SESSION_SECRET`.
+4. Pasang dependensi dan jalankan:
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Buka http://localhost:3000. Cek koneksi database di http://localhost:3000/api/health.
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+Font Plus Jakarta Sans dimuat dari Google Fonts lewat browser, jadi butuh internet saat halaman dibuka.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Akun contoh
 
-## Learn More
+Semua akun memakai password `password123`.
 
-To learn more about Next.js, take a look at the following resources:
+| Role | Email |
+| --- | --- |
+| Admin | admin@ruangkode.com |
+| Teacher | budi.teacher@ruangkode.com |
+| Teacher (baru di-approve, memicu pesan Welcome Teacher) | siti.teacher@ruangkode.com |
+| Student | andi.student@ruangkode.com |
+| Student, pendaftar Teacher (pending) | rina.pending@ruangkode.com |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Pesan Welcome Teacher hanya muncul 24 jam setelah `approved_at`. Jika sudah lewat, jalankan ulang `database.sql`.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Fitur
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Login dan register (pilihan Student atau Teacher; pendaftar Teacher berstatus pending sampai di-approve Admin).
+- Beranda dengan 5 kursus terpopuler, pencarian, dan filter kategori.
+- Katalog dengan kartu pintar (Ikuti kursus atau Lanjutkan belajar beserta progres) dan tombol hubungi pengajar.
+- Halaman belajar berurutan, Mark as Done, tombol lanjut, dan forum diskusi per bab.
+- Sertifikat otomatis saat progres 100% dengan kode unik yang bisa diverifikasi di `/certificates/<kode>`.
+- Dashboard Teacher: CRUD kursus dan materi berurutan, pantau progres siswa.
+- Dashboard Admin: CRUD pengguna (pagination dan filter role), verifikasi Teacher, CRUD kursus, CRUD kategori.
