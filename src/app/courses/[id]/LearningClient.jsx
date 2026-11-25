@@ -3,6 +3,16 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { percentOf } from "@/lib/format";
+import { normalizeMateri } from "@/lib/sanitize";
+
+function CheckIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+      <path d="M2.5 7.5l3 3 6-7" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
 
 export default function LearningClient({
   course,
@@ -11,16 +21,22 @@ export default function LearningClient({
   completedIds,
   comments,
   certificateCode,
+  canTrackProgress,
 }) {
   const router = useRouter();
   const [commentText, setCommentText] = useState("");
   const [btnLoading, setBtnLoading] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
 
   if (!activeContent) {
     return (
-      <div className="rounded-2xl border border-dashed border-[#2E1A47] bg-[#120D26]/60 p-10 text-center text-sm text-slate-400">
-        Belum ada materi pembelajaran yang ditambahkan untuk kursus{" "}
-        <strong className="text-white">{course.nama_course}</strong>.
+      <div>
+        <Link href="/courses" className="link text-sm">
+          Kembali ke katalog
+        </Link>
+        <h1 className="mt-4 text-3xl">{course.nama_course}</h1>
+        <p className="mt-3 text-muted">Pengajar belum menambahkan materi untuk kursus ini.</p>
       </div>
     );
   }
@@ -28,26 +44,27 @@ export default function LearningClient({
   const currentIndex = contents.findIndex((c) => c.id === activeContent.id);
   const nextContent = contents[currentIndex + 1] || null;
   const isCompleted = completedIds.includes(activeContent.id);
-  const progressPercent =
-    contents.length > 0 ? Math.round((completedIds.length / contents.length) * 100) : 0;
+  const progressPercent = percentOf(completedIds.length, contents.length);
+
+  async function post(payload) {
+    const res = await fetch("/api/courses/learning", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Terjadi kesalahan.");
+    return data;
+  }
 
   async function handleMarkAsDone() {
+    setError("");
     setBtnLoading(true);
     try {
-      const res = await fetch("/api/courses/learning", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "mark_as_done", content_id: activeContent.id }),
-      });
-
-      if (res.ok) {
-        router.refresh();
-      } else {
-        const data = await res.json();
-        alert(data.error);
-      }
-    } catch {
-      alert("Terjadi kesalahan server.");
+      await post({ action: "mark_as_done", content_id: activeContent.id });
+      router.refresh();
+    } catch (err) {
+      setError(err.message);
     } finally {
       setBtnLoading(false);
     }
@@ -57,206 +74,178 @@ export default function LearningClient({
     e.preventDefault();
     if (!commentText.trim()) return;
 
+    setError("");
+    setSending(true);
     try {
-      const res = await fetch("/api/courses/learning", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "comment",
-          content_id: activeContent.id,
-          comment_text: commentText,
-        }),
+      await post({
+        action: "comment",
+        content_id: activeContent.id,
+        comment_text: commentText,
       });
-
-      if (res.ok) {
-        setCommentText("");
-        router.refresh();
-      } else {
-        const data = await res.json();
-        alert(data.error);
-      }
-    } catch {
-      alert("Gagal mengirim komentar.");
+      setCommentText("");
+      router.refresh();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSending(false);
     }
   }
 
   return (
-    <div className="grid gap-6 lg:grid-cols-12">
-      {/* SIDEBAR DAFTAR MATERI */}
-      <aside className="h-fit rounded-2xl border border-[#2E1A47] bg-[#120D26] p-4 lg:col-span-4">
-        <Link
-          href="/courses"
-          className="mb-3 inline-block text-xs font-semibold text-slate-400 hover:text-[#F806CC]"
-        >
-          ← Kembali ke Katalog
+    <div className="grid gap-10 lg:grid-cols-[17rem_1fr] lg:gap-14">
+      {/* Daftar bab */}
+      <aside className="lg:sticky lg:top-8 lg:self-start">
+        <Link href="/courses" className="link text-sm">
+          Kembali ke katalog
         </Link>
-        <h2 className="text-sm font-bold text-white">{course.nama_course}</h2>
+        <h2 className="mt-4 text-xl leading-snug">{course.nama_course}</h2>
 
-        <div className="mt-3 mb-4">
-          <div className="mb-1 flex justify-between text-xs text-slate-400">
-            <span>Progres Kelas</span>
-            <span className="font-bold text-amber-400">{progressPercent}%</span>
+        {canTrackProgress && (
+          <div className="mt-4">
+            <div className="mb-1.5 flex justify-between text-sm">
+              <span className="text-muted">Progres</span>
+              <span className="font-medium">{progressPercent}%</span>
+            </div>
+            <div className="progress" role="progressbar" aria-valuenow={progressPercent} aria-valuemin={0} aria-valuemax={100}>
+              <span style={{ width: `${progressPercent}%` }} />
+            </div>
+            <p className="mt-1.5 text-xs text-muted">
+              {completedIds.length} dari {contents.length} bab selesai
+            </p>
           </div>
-          <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#1C143B]">
-            <div
-              className="h-full bg-gradient-to-r from-[#F806CC] to-emerald-400 transition-all"
-              style={{ width: `${progressPercent}%` }}
-            />
-          </div>
-        </div>
+        )}
 
-        {/* Tombol Klaim / Lihat Sertifikat di Sidebar jika 100% */}
         {certificateCode && (
           <Link
             href={`/certificates/${certificateCode}`}
-            className="mb-4 block rounded-xl border border-amber-400/40 bg-gradient-to-r from-amber-500/20 to-[#A91079]/20 p-3 text-center transition hover:border-amber-400"
+            className="mt-5 block rounded-md border border-pine bg-mist px-3.5 py-3 text-sm"
           >
-            <span className="block text-[11px] font-bold uppercase tracking-wider text-amber-300">
-              Kursus Selesai 100%
-            </span>
-            <span className="mt-0.5 block text-xs font-extrabold text-white">
-              Lihat & Cetak Sertifikat →
-            </span>
+            <span className="block font-medium text-pine-deep">Kursus selesai</span>
+            <span className="link">Lihat sertifikat</span>
           </Link>
         )}
 
-        <div className="space-y-2 border-t border-[#2E1A47] pt-3">
+        <ol className="mt-6 border-t border-line">
           {contents.map((c) => {
             const isActive = c.id === activeContent.id;
             const isDone = completedIds.includes(c.id);
 
             return (
-              <Link
-                key={c.id}
-                href={`/courses/${course.id}?materi=${c.id}`}
-                className={`flex items-center gap-3 rounded-xl border p-3 text-xs font-medium transition ${
-                  isActive
-                    ? "border-[#A91079] bg-[#2E1A47] text-white"
-                    : "border-transparent bg-[#0E0A1E] text-slate-300 hover:bg-[#1C143B]"
-                }`}
-              >
-                <div
-                  className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
-                    isDone
-                      ? "bg-emerald-500 text-white"
-                      : "border border-slate-600 text-slate-400"
+              <li key={c.id} className="border-b border-line">
+                <Link
+                  href={`/courses/${course.id}?materi=${c.id}`}
+                  aria-current={isActive ? "page" : undefined}
+                  className={`flex items-start gap-3 px-2 py-3 text-sm transition-colors ${
+                    isActive ? "bg-mist font-medium text-pine-deep" : "hover:bg-panel"
                   }`}
                 >
-                  {isDone ? "✓" : c.order_index}
-                </div>
-                <div className="min-w-0 flex-grow">
-                  <span className="block text-[10px] font-normal text-slate-400">
-                    Bab #{c.order_index}
+                  <span
+                    className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs ${
+                      isDone ? "bg-pine text-white" : "border border-line text-muted"
+                    }`}
+                  >
+                    {isDone ? <CheckIcon /> : c.order_index}
                   </span>
-                  <span className="block truncate">{c.judul}</span>
-                </div>
-              </Link>
+                  <span className="min-w-0 leading-snug">{c.judul}</span>
+                </Link>
+              </li>
             );
           })}
-        </div>
+        </ol>
       </aside>
 
-      {/* KONTEN MATERI & DISKUSI */}
-      <section className="space-y-6 lg:col-span-8">
-        <div className="rounded-2xl border border-[#2E1A47] bg-[#120D26] p-6 shadow-xl shadow-black/30">
-          <div className="mb-6 flex flex-wrap items-center justify-between gap-3 border-b border-[#2E1A47] pb-4">
-            <div>
-              <span className="text-xs font-bold uppercase tracking-wider text-amber-400">
-                Bab #{activeContent.order_index}
-              </span>
-              <h1 className="mt-0.5 text-2xl font-black text-white">{activeContent.judul}</h1>
-            </div>
+      {/* Materi dan diskusi */}
+      <section className="min-w-0">
+        <p className="text-sm text-muted">Bab {activeContent.order_index}</p>
+        <h1 className="mt-1 text-3xl sm:text-4xl">{activeContent.judul}</h1>
 
-            {isCompleted ? (
-              <span className="inline-block rounded-full border border-emerald-500/30 bg-emerald-950/50 px-3.5 py-1.5 text-xs font-bold text-emerald-400">
-                ✓ Selesai Dipelajari
+        <article
+          className="materi rich mt-8"
+          dangerouslySetInnerHTML={{ __html: normalizeMateri(activeContent.isi_materi) }}
+        />
+
+        {error && (
+          <div role="alert" className="notice notice-err mt-8">
+            {error}
+          </div>
+        )}
+
+        <div className="mt-10 flex flex-wrap items-center gap-3 border-t border-line pt-6">
+          {canTrackProgress &&
+            (isCompleted ? (
+              <span className="inline-flex items-center gap-1.5 text-sm font-medium text-pine">
+                <CheckIcon /> Bab ini sudah selesai
               </span>
             ) : (
               <button
+                type="button"
                 onClick={handleMarkAsDone}
                 disabled={btnLoading}
-                className="rounded-lg bg-emerald-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-emerald-500 disabled:opacity-50"
+                className="btn btn-primary"
               >
-                {btnLoading ? "Menyimpan..." : "Tandai Selesai (Mark as Done)"}
+                {btnLoading ? "Menyimpan..." : "Tandai selesai"}
               </button>
-            )}
-          </div>
+            ))}
 
-          <article className="whitespace-pre-line text-sm leading-relaxed text-slate-300">
-            {activeContent.isi_materi}
-          </article>
+          {nextContent && (
+            <Link
+              href={`/courses/${course.id}?materi=${nextContent.id}`}
+              className={`btn ${canTrackProgress && !isCompleted ? "btn-outline" : "btn-primary"}`}
+            >
+              Lanjutkan: {nextContent.judul}
+            </Link>
+          )}
 
-          <div className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-[#2E1A47] pt-4">
-            {certificateCode ? (
-              <Link
-                href={`/certificates/${certificateCode}`}
-                className="rounded-lg border border-amber-400/50 bg-amber-500/15 px-4 py-2.5 text-xs font-bold text-amber-300 transition hover:bg-amber-500/25"
-              >
-                Buka Sertifikat Kelulusan →
-              </Link>
-            ) : (
-              <div />
-            )}
-
-            {nextContent && (
-              <Link
-                href={`/courses/${course.id}?materi=${nextContent.id}`}
-                className="rounded-lg bg-gradient-to-r from-[#F806CC] to-[#A91079] px-5 py-2.5 text-xs font-bold text-white shadow-lg transition hover:opacity-90"
-              >
-                Bab Berikutnya: {nextContent.judul} →
-              </Link>
-            )}
-          </div>
+          {!nextContent && certificateCode && (
+            <Link href={`/certificates/${certificateCode}`} className="btn btn-primary">
+              Lihat sertifikat
+            </Link>
+          )}
         </div>
 
-        {/* FORUM DISKUSI PER MATERI */}
-        <div className="rounded-2xl border border-[#2E1A47] bg-[#120D26] p-6">
-          <h3 className="mb-4 text-base font-bold text-white">Forum Diskusi Materi</h3>
+        {/* Diskusi */}
+        <div className="mt-14">
+          <h2 className="text-2xl">Diskusi bab ini</h2>
 
-          <form onSubmit={handleCommentSubmit} className="mb-6 space-y-3">
+          <form onSubmit={handleCommentSubmit} className="mt-5">
+            <label htmlFor="comment" className="sr-only">
+              Komentar
+            </label>
             <textarea
+              id="comment"
               required
               rows={3}
+              maxLength={2000}
               value={commentText}
               onChange={(e) => setCommentText(e.target.value)}
-              placeholder="Tuliskan pertanyaan atau tanggapan Anda tentang bab ini..."
-              className="w-full rounded-lg border border-[#2E1A47] bg-[#0E0A1E] px-4 py-3 text-sm text-white placeholder-slate-500 focus:border-[#A91079] focus:outline-none"
+              placeholder="Tulis pertanyaan atau tanggapan Anda"
+              className="field"
             />
-            <button
-              type="submit"
-              className="rounded-lg bg-gradient-to-r from-[#F806CC] to-[#A91079] px-4 py-2 text-xs font-bold text-white transition hover:opacity-90"
-            >
-              Kirim Komentar
+            <button type="submit" disabled={sending} className="btn btn-outline btn-sm mt-3">
+              {sending ? "Mengirim..." : "Kirim komentar"}
             </button>
           </form>
 
-          <div className="space-y-3">
-            {comments.length === 0 ? (
-              <p className="text-xs text-slate-500">
-                Belum ada diskusi pada bab ini. Jadilah yang pertama bertanya!
-              </p>
-            ) : (
-              comments.map((comment) => (
-                <div
-                  key={comment.id}
-                  className="rounded-xl border border-[#2E1A47] bg-[#0E0A1E] p-3.5"
-                >
-                  <div className="mb-1.5 flex items-center gap-2">
-                    <span className="text-xs font-bold text-slate-200">{comment.username}</span>
-                    <span className="rounded border border-purple-500/30 bg-purple-950/50 px-1.5 py-0.5 text-[9px] font-bold uppercase text-purple-300">
-                      {comment.role}
-                    </span>
-                    <span className="ml-auto text-[10px] text-slate-500">
-                      {new Date(comment.created_at).toLocaleDateString("id-ID")}
-                    </span>
-                  </div>
-                  <p className="whitespace-pre-line text-xs leading-relaxed text-slate-300">
+          {comments.length === 0 ? (
+            <p className="mt-8 text-sm text-muted">Belum ada diskusi. Mulai dengan satu pertanyaan.</p>
+          ) : (
+            <ul className="mt-8 divide-y divide-line border-y border-line">
+              {comments.map((comment) => (
+                <li key={comment.id} className="py-4">
+                  <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+                    <span className="font-medium">{comment.username}</span>
+                    {comment.role !== "student" && (
+                      <span className="badge">{comment.role === "admin" ? "Admin" : "Pengajar"}</span>
+                    )}
+                    <span className="text-muted">{comment.date_label}</span>
+                  </p>
+                  <p className="mt-1.5 whitespace-pre-line text-[15px] leading-relaxed">
                     {comment.comment_text}
                   </p>
-                </div>
-              ))
-            )}
-          </div>
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       </section>
     </div>

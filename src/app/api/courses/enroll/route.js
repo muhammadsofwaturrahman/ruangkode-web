@@ -9,27 +9,38 @@ export async function POST(request) {
   }
 
   try {
-    const { course_id } = await request.json();
-    if (!course_id) {
-      return NextResponse.json({ error: "ID kursus wajib disertakan." }, { status: 400 });
+    const body = await request.json();
+    const courseId = Number(body?.course_id);
+    if (!Number.isInteger(courseId) || courseId <= 0) {
+      return NextResponse.json({ error: "ID kursus tidak valid." }, { status: 400 });
     }
 
-    const existing = await pool.query(
-      "SELECT id FROM enrollments WHERE student_id = $1 AND course_id = $2",
-      [session.id, Number(course_id)]
+    const course = await pool.query("SELECT id, teacher_id FROM courses WHERE id = $1", [courseId]);
+    if (course.rows.length === 0) {
+      return NextResponse.json({ error: "Kursus tidak ditemukan." }, { status: 404 });
+    }
+    if (course.rows[0].teacher_id === session.id) {
+      return NextResponse.json(
+        { error: "Anda adalah pengajar kursus ini, tidak perlu mendaftar." },
+        { status: 400 }
+      );
+    }
+
+    const inserted = await pool.query(
+      `INSERT INTO enrollments (student_id, course_id)
+       VALUES ($1, $2)
+       ON CONFLICT (student_id, course_id) DO NOTHING
+       RETURNING id`,
+      [session.id, courseId]
     );
 
-    if (existing.rows.length > 0) {
+    if (inserted.rows.length === 0) {
       return NextResponse.json({ error: "Anda sudah terdaftar di kursus ini." }, { status: 409 });
     }
 
-    await pool.query(
-      "INSERT INTO enrollments (student_id, course_id) VALUES ($1, $2)",
-      [session.id, Number(course_id)]
-    );
-
     return NextResponse.json({ message: "Berhasil mengikuti kursus." });
   } catch (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    console.error("enroll error:", error);
+    return NextResponse.json({ error: "Gagal mendaftar kursus." }, { status: 500 });
   }
 }
