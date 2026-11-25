@@ -1,15 +1,454 @@
 @import "tailwindcss";
 
+/*
+  RuangKode: tema graduation (ungu malam, pink, amber) dengan tata letak yang tenang.
+  Huruf: Plus Jakarta Sans untuk seluruh antarmuka (judul dan isi).
+*/
+
+@theme inline {
+  --font-sans: var(--font-jakarta), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* kelas font-serif yang sudah dipakai di banyak halaman kini ikut Plus Jakarta Sans */
+  --font-serif: var(--font-jakarta), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+@theme {
+  --color-paper: #0e0a1e;
+  --color-panel: #120d26;
+  --color-ink: #f1ecf8;
+  --color-muted: #a39bb8;
+  --color-line: #2e1a47;
+  --color-pine: #f806cc;
+  --color-pine-deep: #eab4f7;
+  --color-magenta: #a91079;
+  --color-mist: #2e1a47;
+  --color-brick: #f87171;
+  --color-ochre: #f59e0b;
+  --color-sand: #2b2010;
+}
+
 ::-webkit-scrollbar {
   width: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: #0E0A1E;
+  background: var(--color-paper);
 }
 ::-webkit-scrollbar-thumb {
-  background: #2E1A47;
+  background: var(--scroll-thumb);
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #A91079;
+  background: #a91079;
+}
+
+/* Variabel pendukung komponen: nilai gelap bawaan, nilai terang di bawah */
+:root {
+  --font-jakarta: "Plus Jakarta Sans";
+  --danger-border: #5c2a3c;
+  --danger-bg: #2a1220;
+  --badge-muted-bg: #1c143b;
+  --field-hover: #4a2e6b;
+  --placeholder: #7a7094;
+  --scroll-thumb: #2e1a47;
+  --decor-opacity: 0.09;
+}
+
+/* Mode terang: tetap nuansa Graduation (lilac, magenta, amber), hanya dibalik terang */
+:root[data-theme="light"] {
+  color-scheme: light;
+  --color-paper: #faf7fc;
+  --color-panel: #ffffff;
+  --color-ink: #1e1730;
+  --color-muted: #675d7c;
+  --color-line: #e2d8ee;
+  --color-pine: #a91079;
+  --color-pine-deep: #7a0f58;
+  --color-magenta: #a91079;
+  --color-mist: #f1e6f7;
+  --color-brick: #b42318;
+  --color-ochre: #9a6200;
+  --color-sand: #fbf0d9;
+  --danger-border: #ecc3bf;
+  --danger-bg: #fbeceb;
+  --badge-muted-bg: #efe9f5;
+  --field-hover: #c9b6dc;
+  --placeholder: #9a90ae;
+  --scroll-thumb: #d9c9e8;
+  --decor-opacity: 0.07;
+}
+
+@layer base {
+  html {
+    background: var(--color-paper);
+    color-scheme: dark;
+  }
+  body {
+    color: var(--color-ink);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-serif);
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    line-height: 1.15;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-pine);
+    outline-offset: 2px;
+  }
+  ::selection {
+    background: var(--color-mist);
+  }
+  button {
+    cursor: pointer;
+  }
+}
+
+@layer components {
+  /* Tombol */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    height: 40px;
+    padding: 0 16px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1;
+    white-space: nowrap;
+    transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+  }
+  .btn:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+  .btn-sm {
+    height: 32px;
+    padding: 0 12px;
+    font-size: 13px;
+  }
+  .btn-primary {
+    background: var(--color-magenta);
+    color: #fff;
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: #c2128c;
+  }
+  .btn-outline {
+    background: var(--color-panel);
+    border-color: var(--color-line);
+    color: var(--color-ink);
+  }
+  .btn-outline:hover:not(:disabled) {
+    border-color: var(--color-pine);
+    color: var(--color-pine);
+  }
+  .btn-danger {
+    background: var(--color-panel);
+    border-color: var(--danger-border);
+    color: var(--color-brick);
+  }
+  .btn-danger:hover:not(:disabled) {
+    background: var(--danger-bg);
+    border-color: var(--color-brick);
+  }
+
+  /* Isian formulir */
+  .label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .hint {
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--color-muted);
+  }
+  .field {
+    display: block;
+    width: 100%;
+    height: 40px;
+    padding: 0 12px;
+    border: 1px solid var(--color-line);
+    border-radius: 6px;
+    background: var(--color-panel);
+    color: var(--color-ink);
+    font-size: 14px;
+    transition: border-color 0.15s;
+  }
+  textarea.field {
+    height: auto;
+    padding: 10px 12px;
+    line-height: 1.55;
+    resize: vertical;
+  }
+  .field::placeholder {
+    color: var(--placeholder);
+  }
+  .field:hover {
+    border-color: var(--field-hover);
+  }
+  .field:focus {
+    border-color: var(--color-pine);
+    outline: none;
+    box-shadow: 0 0 0 3px var(--color-mist);
+  }
+
+  /* Label status */
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: var(--color-mist);
+    color: var(--color-pine-deep);
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.5;
+  }
+  .badge-warn {
+    background: var(--color-sand);
+    color: var(--color-ochre);
+  }
+  .badge-muted {
+    background: var(--badge-muted-bg);
+    color: var(--color-muted);
+  }
+
+  /* Pesan */
+  .notice {
+    padding: 12px 16px;
+    border: 1px solid var(--color-line);
+    border-left-width: 3px;
+    border-radius: 6px;
+    background: var(--color-panel);
+    font-size: 14px;
+  }
+  .notice-ok {
+    border-left-color: var(--color-pine);
+  }
+  .notice-err {
+    border-left-color: var(--color-brick);
+  }
+  .notice-warn {
+    border-left-color: var(--color-ochre);
+  }
+
+  /* Tautan teks */
+  .link {
+    color: var(--color-pine);
+    text-decoration: underline;
+    text-decoration-color: transparent;
+    text-underline-offset: 3px;
+    transition: text-decoration-color 0.15s;
+  }
+  .link:hover {
+    text-decoration-color: currentColor;
+  }
+
+  /* Bilah progres */
+  .progress {
+    height: 4px;
+    overflow: hidden;
+    border-radius: 2px;
+    background: var(--color-line);
+  }
+  .progress > span {
+    display: block;
+    height: 100%;
+    background: var(--color-pine);
+  }
+
+  /* Panel berisi formulir */
+  .panel {
+    border: 1px solid var(--color-line);
+    border-radius: 8px;
+    background: var(--color-panel);
+    padding: 20px;
+  }
+
+  /* Tabel */
+  .table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+    font-size: 14px;
+  }
+  .table th {
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--color-line);
+    color: var(--color-muted);
+    font-size: 13px;
+    font-weight: 500;
+  }
+  .table td {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--color-line);
+    vertical-align: top;
+  }
+  .table tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  /* Isi materi: nyaman dibaca */
+  .materi {
+    max-width: 66ch;
+    font-family: var(--font-serif);
+    font-size: 17px;
+    line-height: 1.8;
+  }
+}
+
+/* Gaya isi materi (dipakai di editor dan halaman belajar) */
+.rich {
+  overflow-wrap: anywhere;
+}
+.rich:empty::before {
+  content: attr(data-placeholder);
+  color: var(--placeholder);
+}
+.rich p,
+.rich ul,
+.rich ol,
+.rich blockquote,
+.rich pre,
+.rich table {
+  margin: 0 0 1em;
+}
+.rich h2 {
+  margin: 1.4em 0 0.5em;
+  font-size: 1.5em;
+}
+.rich h3 {
+  margin: 1.2em 0 0.4em;
+  font-size: 1.25em;
+}
+.rich h4 {
+  margin: 1em 0 0.4em;
+  font-size: 1.05em;
+  font-weight: 700;
+}
+.rich ul {
+  list-style: disc;
+  padding-left: 1.5em;
+}
+.rich ol {
+  list-style: decimal;
+  padding-left: 1.5em;
+}
+.rich a {
+  color: var(--color-pine);
+  text-decoration: underline;
+}
+.rich img {
+  max-width: 100%;
+  height: auto;
+  margin: 0.5em 0;
+  border-radius: 12px;
+}
+.rich blockquote {
+  padding-left: 1em;
+  border-left: 3px solid var(--color-magenta);
+  color: var(--color-muted);
+}
+.rich pre,
+.rich code {
+  border-radius: 6px;
+  background: var(--color-mist);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+}
+.rich pre {
+  padding: 12px 14px;
+  overflow-x: auto;
+}
+.rich code {
+  padding: 1px 5px;
+}
+.rich table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95em;
+}
+.rich th,
+.rich td {
+  min-width: 4rem;
+  padding: 8px 10px;
+  border: 1px solid var(--color-line);
+  text-align: left;
+}
+.rich th {
+  background: var(--color-mist);
+  font-weight: 700;
+}
+
+/* Latar dekoratif */
+.decor {
+  opacity: var(--decor-opacity);
+}
+
+/* Kartu course bergaya katalog modern */
+.course-card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--color-line);
+  border-radius: 20px;
+  background: var(--color-panel);
+  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+}
+.course-card:hover {
+  transform: translateY(-4px);
+  border-color: var(--color-magenta);
+  box-shadow: 0 18px 40px -18px rgba(169, 16, 121, 0.45);
+}
+
+/* Sertifikat */
+.certificate {
+  background: var(--color-panel);
+  color: var(--color-ink);
+  border: 1px solid var(--color-line);
+  padding: 12px;
+}
+.certificate-inner {
+  border: 2px solid var(--color-magenta);
+  outline: 1px solid var(--color-magenta);
+  outline-offset: -8px;
+  padding: 56px 48px;
+}
+
+@media print {
+  :root {
+    --color-paper: #fff;
+    --color-panel: #fff;
+    --color-ink: #1e1730;
+    --color-muted: #5b536e;
+    --color-line: #d4cfdf;
+    --color-pine: #a91079;
+    --color-pine-deep: #7a0f58;
+  }
+  @page {
+    size: A4 landscape;
+    margin: 12mm;
+  }
+  html,
+  body {
+    background: #fff !important;
+  }
+  .certificate {
+    border: none;
+    padding: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
 }
