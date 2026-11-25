@@ -3,16 +3,24 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import Image from "next/image";
+
+const OPTIONS = [
+  {
+    value: "student",
+    title: "Student",
+    desc: "Ikuti kursus dan pantau progres belajar.",
+  },
+  {
+    value: "teacher",
+    title: "Teacher",
+    desc: "Buat kursus dan materi. Perlu verifikasi Admin.",
+  },
+];
 
 export default function RegisterPage() {
   const router = useRouter();
-  const [form, setForm] = useState({
-    username: "",
-    email: "",
-    password: "",
-    role: "student",
-  });
+  const [registerAs, setRegisterAs] = useState("student");
+  const [form, setForm] = useState({ username: "", email: "", password: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -25,125 +33,126 @@ export default function RegisterPage() {
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, registerAs }),
       });
 
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || "Gagal mendaftar.");
+        setError(data.error || "Pendaftaran gagal.");
         return;
       }
 
-      router.push("/login");
+      // Pendaftar langsung masuk sebagai student, termasuk yang memilih Teacher.
+      router.push("/profile");
+      router.refresh();
     } catch {
-      setError("Terjadi kesalahan saat menghubungi server.");
+      setError("Tidak dapat menghubungi server. Coba lagi sebentar lagi.");
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#0E0A1E] px-4 py-12 text-slate-100">
-      <div className="pointer-events-none absolute -top-24 -right-24 h-72 w-72 rounded-full bg-[#A91079]/20 blur-3xl" />
-      <div className="pointer-events-none absolute -bottom-24 -left-24 h-72 w-72 rounded-full bg-amber-500/10 blur-3xl" />
-
-      <div className="relative z-10 w-full max-w-md rounded-2xl border border-[#2E1A47] bg-[#120D26] p-8 shadow-2xl shadow-black/40">
-        <div className="mb-6 text-center">
-          <Link href="/" className="inline-flex items-center gap-2.5">
-            <Image
-              src="/images/bear-logo.jpg"
-              alt="Logo RuangKode"
-              width={36}
-              height={36}
-              unoptimized
-              className="h-9 w-9 rounded-full border border-[#2E1A47] object-cover"
-            />
-            <span className="bg-gradient-to-r from-[#F806CC] via-[#A91079] to-[#F59E0B] bg-clip-text text-2xl font-black text-transparent">
-              RuangKode
-            </span>
-          </Link>
-          <h1 className="mt-4 text-xl font-bold text-white">Buat Akun Baru</h1>
-          <p className="mt-1 text-xs text-slate-400">
-            Mulai perjalanan belajar coding Anda di RuangKode.
-          </p>
-        </div>
+    <main className="mx-auto max-w-5xl px-5 py-16 sm:px-8 sm:py-24">
+      <div className="max-w-md">
+        <h1 className="text-4xl">Buat akun</h1>
+        <p className="mt-2 text-muted">Gratis, dan siap dipakai begitu Anda selesai mendaftar.</p>
 
         {error && (
-          <div className="mb-4 rounded-xl border border-red-500/30 bg-red-950/40 px-4 py-3 text-xs text-red-300">
+          <div role="alert" className="notice notice-err mt-6">
             {error}
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="mt-8 space-y-5">
+          <fieldset>
+            <legend className="label">Daftar sebagai</legend>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {OPTIONS.map((opt) => {
+                const checked = registerAs === opt.value;
+                return (
+                  <label
+                    key={opt.value}
+                    className={`cursor-pointer rounded-md border p-3.5 transition-colors ${
+                      checked ? "border-pine bg-mist" : "border-line bg-panel hover:border-pine"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="registerAs"
+                      value={opt.value}
+                      checked={checked}
+                      onChange={() => setRegisterAs(opt.value)}
+                      className="sr-only"
+                    />
+                    <span className="block text-sm font-medium">{opt.title}</span>
+                    <span className="mt-0.5 block text-sm text-muted">{opt.desc}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </fieldset>
+
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-slate-300">Username</label>
+            <label htmlFor="username" className="label">
+              Nama
+            </label>
             <input
+              id="username"
               type="text"
               required
+              maxLength={100}
+              autoComplete="name"
               value={form.username}
               onChange={(e) => setForm({ ...form, username: e.target.value })}
-              placeholder="Nama lengkap atau panggilan"
-              className="w-full rounded-lg border border-[#2E1A47] bg-[#0E0A1E] px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:border-[#A91079] focus:outline-none"
+              className="field"
             />
           </div>
 
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-slate-300">Email</label>
+            <label htmlFor="email" className="label">
+              Email
+            </label>
             <input
+              id="email"
               type="email"
               required
+              autoComplete="email"
               value={form.email}
               onChange={(e) => setForm({ ...form, email: e.target.value })}
-              placeholder="nama@email.com"
-              className="w-full rounded-lg border border-[#2E1A47] bg-[#0E0A1E] px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:border-[#A91079] focus:outline-none"
+              className="field"
             />
           </div>
 
           <div>
-            <label className="mb-1.5 block text-xs font-medium text-slate-300">Password</label>
+            <label htmlFor="password" className="label">
+              Password
+            </label>
             <input
+              id="password"
               type="password"
               required
               minLength={6}
+              autoComplete="new-password"
               value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })}
-              placeholder="Minimal 6 karakter"
-              className="w-full rounded-lg border border-[#2E1A47] bg-[#0E0A1E] px-3.5 py-2.5 text-sm text-white placeholder-slate-500 focus:border-[#A91079] focus:outline-none"
+              className="field"
             />
+            <p className="hint">Minimal 6 karakter.</p>
           </div>
 
-          <div>
-            <label className="mb-1.5 block text-xs font-medium text-slate-300">Daftar Sebagai</label>
-            <select
-              value={form.role}
-              onChange={(e) => setForm({ ...form, role: e.target.value })}
-              className="w-full rounded-lg border border-[#2E1A47] bg-[#0E0A1E] px-3.5 py-2.5 text-sm text-white focus:border-[#A91079] focus:outline-none"
-            >
-              <option value="student" className="bg-[#120D26]">
-                Student (Pelajar)
-              </option>
-              <option value="teacher" className="bg-[#120D26]">
-                Teacher (Pengajar — perlu verifikasi Admin)
-              </option>
-            </select>
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full rounded-lg bg-gradient-to-r from-[#F806CC] to-[#A91079] py-2.5 text-sm font-bold text-white shadow-lg shadow-[#F806CC]/20 transition hover:opacity-90 disabled:opacity-50"
-          >
-            {loading ? "Mendaftarkan..." : "Daftar Sekarang"}
+          <button type="submit" disabled={loading} className="btn btn-primary w-full">
+            {loading ? "Mendaftarkan..." : "Buat akun"}
           </button>
         </form>
 
-        <p className="mt-6 text-center text-xs text-slate-400">
+        <p className="mt-8 text-sm text-muted">
           Sudah punya akun?{" "}
-          <Link href="/login" className="font-bold text-[#F806CC] hover:underline">
-            Masuk di sini
+          <Link href="/login" className="link font-medium">
+            Masuk
           </Link>
         </p>
       </div>
-    </div>
+    </main>
   );
 }
