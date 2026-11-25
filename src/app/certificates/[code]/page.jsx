@@ -1,19 +1,18 @@
 import Link from "next/link";
-import Image from "next/image";
 import pool from "@/lib/db";
-import { getSession } from "@/lib/session";
-import Navbar from "@/components/Navbar";
+import { formatDate } from "@/lib/format";
 import PrintButton from "./PrintButton";
 
 export const dynamic = "force-dynamic";
+export const metadata = { title: "Sertifikat" };
 
 export default async function CertificatePage({ params }) {
-  const session = await getSession();
   const { code } = await params;
 
+  // Halaman ini sengaja publik: siapa pun dapat memeriksa keaslian sertifikat dari kodenya.
   const certRes = await pool.query(
     `SELECT cert.certificate_code, cert.issued_at,
-            u.username AS student_name, u.email AS student_email,
+            u.username AS student_name,
             c.id AS course_id, c.nama_course,
             cat.name AS category_name,
             t.username AS teacher_name
@@ -30,136 +29,64 @@ export default async function CertificatePage({ params }) {
 
   if (!cert) {
     return (
-      <div className="min-h-screen bg-[#0E0A1E]">
-        <Navbar user={session} />
-        <main className="mx-auto max-w-2xl px-4 py-20 text-center">
-          <div className="rounded-2xl border border-red-500/30 bg-[#120D26] p-8">
-            <h1 className="text-xl font-bold text-white">Sertifikat Tidak Ditemukan</h1>
-            <p className="mt-2 text-sm text-slate-400">
-              Kode verifikasi <span className="font-mono text-amber-400">{code}</span> tidak
-              terdaftar di sistem RuangKode.
-            </p>
-            <Link
-              href="/courses"
-              className="mt-6 inline-block rounded-lg bg-[#2E1A47] px-5 py-2.5 text-xs font-bold text-white hover:bg-[#A91079]"
-            >
-              Kembali ke Katalog Kursus
-            </Link>
-          </div>
-        </main>
-      </div>
+      <main className="mx-auto max-w-5xl px-5 py-20 sm:px-8">
+        <h1 className="text-3xl">Sertifikat tidak ditemukan</h1>
+        <p className="mt-3 max-w-lg text-muted">
+          Kode <span className="font-mono text-ink">{code}</span> tidak terdaftar di RuangKode.
+          Periksa kembali penulisan kodenya.
+        </p>
+        <Link href="/courses" className="btn btn-primary mt-6">
+          Buka katalog kursus
+        </Link>
+      </main>
     );
   }
 
-  const formattedDate = new Date(cert.issued_at).toLocaleDateString("id-ID", {
-    day: "numeric",
-    month: "long",
-    year: "numeric",
-  });
-
   return (
-    <div className="min-h-screen bg-[#0E0A1E] print:bg-white">
-      <div className="print:hidden">
-        <Navbar user={session} />
+    <main className="mx-auto max-w-4xl px-5 py-10 sm:px-8 print:max-w-none print:p-0">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3 print:hidden">
+        <Link href={`/courses/${cert.course_id}`} className="link text-sm">
+          Kembali ke kursus
+        </Link>
+        <PrintButton />
       </div>
 
-      <main className="mx-auto max-w-4xl px-4 py-10 sm:px-6 print:max-w-none print:p-0">
-        {/* Baris Aksi (Disembunyikan saat Print/PDF) */}
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-3 print:hidden">
-          <Link
-            href={`/courses/${cert.course_id}`}
-            className="text-sm font-semibold text-slate-400 transition hover:text-[#F806CC]"
-          >
-            ← Kembali ke Materi Kursus
-          </Link>
-          <PrintButton />
-        </div>
+      <div className="certificate">
+        <div className="certificate-inner text-center">
+          <p className="font-serif text-xl font-semibold tracking-tight text-pine-deep">RuangKode</p>
 
-        {/* Kartu Sertifikat */}
-        <div className="relative overflow-hidden rounded-3xl border-2 border-amber-400/50 bg-[#120D26] p-8 shadow-2xl shadow-[#A91079]/20 sm:p-12 print:rounded-none print:border-4 print:border-amber-600 print:bg-white print:text-slate-900 print:shadow-none">
-          <div className="pointer-events-none absolute -top-24 -right-24 h-64 w-64 rounded-full bg-[#F806CC]/15 blur-3xl print:hidden" />
-          <div className="pointer-events-none absolute -bottom-24 -left-24 h-64 w-64 rounded-full bg-amber-400/10 blur-3xl print:hidden" />
+          <h1 className="mt-10 text-3xl sm:text-4xl">Sertifikat Penyelesaian</h1>
 
-          {/* Header Sertifikat */}
-          <div className="relative z-10 flex flex-wrap items-center justify-between gap-4 border-b border-[#2E1A47] pb-6 print:border-slate-300">
-            <div className="flex items-center gap-3">
-              <Image
-                src="/images/bear-logo.jpg"
-                alt="Logo RuangKode"
-                width={44}
-                height={44}
-                unoptimized
-                className="h-11 w-11 rounded-full border border-amber-400/40 object-cover"
-              />
-              <div>
-                <span className="bg-gradient-to-r from-[#F806CC] via-[#A91079] to-[#F59E0B] bg-clip-text text-xl font-black text-transparent print:text-slate-900">
-                  RuangKode
-                </span>
-                <p className="text-[11px] uppercase tracking-widest text-slate-400 print:text-slate-600">
-                  Certificate of Completion
-                </p>
-              </div>
-            </div>
+          <p className="mt-9 text-muted">Diberikan kepada</p>
+          <p className="mt-2 font-serif text-4xl sm:text-5xl">{cert.student_name}</p>
 
-            <div className="text-right">
-              <span className="block text-[10px] uppercase tracking-wider text-slate-400 print:text-slate-500">
-                Kode Verifikasi
-              </span>
-              <span className="font-mono text-xs font-bold text-amber-400 print:text-slate-800">
-                {cert.certificate_code}
-              </span>
-            </div>
-          </div>
+          <p className="mx-auto mt-8 max-w-md text-muted">
+            yang telah menyelesaikan seluruh bab pada kursus
+          </p>
+          <p className="mt-2 font-serif text-2xl text-pine-deep sm:text-3xl">{cert.nama_course}</p>
+          {cert.category_name && <p className="mt-1 text-sm text-muted">{cert.category_name}</p>}
 
-          {/* Isi Utama Sertifikat */}
-          <div className="relative z-10 py-10 text-center">
-            <p className="text-xs font-bold uppercase tracking-[0.25em] text-purple-300 print:text-purple-700">
-              Diberikan Kepada
-            </p>
-            <h1 className="mt-3 text-3xl font-black tracking-tight text-white sm:text-4xl print:text-slate-900">
-              {cert.student_name}
-            </h1>
-            <p className="mt-1 text-xs text-slate-400 print:text-slate-600">
-              {cert.student_email}
-            </p>
-
-            <p className="mx-auto mt-8 max-w-xl text-sm leading-relaxed text-slate-300 print:text-slate-700">
-              Atas keberhasilannya menyelesaikan seluruh materi pembelajaran (100% progres) pada
-              kursus:
-            </p>
-
-            <h2 className="mt-3 text-2xl font-extrabold text-amber-400 print:text-amber-700">
-              {cert.nama_course}
-            </h2>
-            {cert.category_name && (
-              <span className="mt-2 inline-block rounded-full border border-purple-500/30 bg-purple-950/50 px-3 py-0.5 text-xs font-semibold text-purple-300 print:border-slate-300 print:bg-slate-100 print:text-slate-700">
-                Kategori: {cert.category_name}
-              </span>
-            )}
-          </div>
-
-          {/* Footer & Tanda Tangan */}
-          <div className="relative z-10 mt-4 flex flex-wrap items-end justify-between gap-6 border-t border-[#2E1A47] pt-6 print:border-slate-300">
+          <div className="mt-14 grid gap-6 border-t border-line pt-6 text-sm sm:grid-cols-3">
             <div>
-              <span className="block text-[11px] text-slate-400 print:text-slate-500">
-                Tanggal Diterbitkan
-              </span>
-              <span className="text-sm font-semibold text-white print:text-slate-900">
-                {formattedDate}
-              </span>
+              <p className="text-muted">Tanggal terbit</p>
+              <p className="mt-0.5 font-medium">{formatDate(cert.issued_at)}</p>
             </div>
-
-            <div className="text-right">
-              <span className="block text-[11px] text-slate-400 print:text-slate-500">
-                Instruktur Pengampu
-              </span>
-              <span className="text-sm font-bold text-white print:text-slate-900">
-                {cert.teacher_name || "Tim Pengajar RuangKode"}
-              </span>
+            <div>
+              <p className="text-muted">Pengajar</p>
+              <p className="mt-0.5 font-medium">{cert.teacher_name || "Tim RuangKode"}</p>
+            </div>
+            <div>
+              <p className="text-muted">Kode verifikasi</p>
+              <p className="mt-0.5 break-all font-mono font-medium">{cert.certificate_code}</p>
             </div>
           </div>
         </div>
-      </main>
-    </div>
+      </div>
+
+      <p className="mt-5 text-sm text-muted print:hidden">
+        Keaslian sertifikat ini dapat diperiksa kapan saja dengan membuka alamat
+        /certificates/{cert.certificate_code}.
+      </p>
+    </main>
   );
 }
