@@ -1,22 +1,24 @@
 import pool from "@/lib/db";
 import { getSession } from "@/lib/session";
-import Navbar from "@/components/Navbar";
+import { formatDateOnly } from "@/lib/format";
 import CoursesClient from "./CoursesClient";
 
 export const dynamic = "force-dynamic";
+export const metadata = { title: "Katalog Kursus" };
 
 export default async function CoursesPage({ searchParams }) {
   const session = await getSession();
   const resolvedParams = await searchParams;
-  const search = resolvedParams?.search?.trim() || "";
-  const categoryId = resolvedParams?.category || "";
+  const search = String(resolvedParams?.search ?? "").trim();
+  const categoryId = String(resolvedParams?.category ?? "").trim();
 
   const categoriesRes = await pool.query("SELECT id, name FROM categories ORDER BY name ASC");
 
   const queryParams = [];
   let queryStr = `
-    SELECT c.id, c.nama_course, c.deskripsi, c.start_date, c.end_date,
-           cat.name AS category_name, cat.id AS category_id,
+    SELECT c.id, c.nama_course, c.deskripsi,
+           c.start_date::text AS start_date, c.end_date::text AS end_date,
+           cat.name AS category_name,
            u.username AS teacher_name, u.email AS teacher_email,
            COUNT(DISTINCT cnt.id) AS total_materi,
            (SELECT COUNT(*) FROM enrollments WHERE course_id = c.id) AS student_count
@@ -26,10 +28,11 @@ export default async function CoursesPage({ searchParams }) {
     queryParams.push(session.id);
     queryStr += `,
       EXISTS(SELECT 1 FROM enrollments WHERE student_id = $1 AND course_id = c.id) AS is_enrolled,
+      (c.teacher_id = $1) AS is_owner,
       COUNT(DISTINCT cp.content_id) AS completed_materi
     `;
   } else {
-    queryStr += `, false AS is_enrolled, 0 AS completed_materi`;
+    queryStr += `, false AS is_enrolled, false AS is_owner, 0 AS completed_materi`;
   }
 
   queryStr += `
@@ -50,7 +53,7 @@ export default async function CoursesPage({ searchParams }) {
       `(c.nama_course ILIKE $${queryParams.length} OR c.deskripsi ILIKE $${queryParams.length})`
     );
   }
-  if (categoryId && !Number.isNaN(Number(categoryId))) {
+  if (categoryId && Number.isInteger(Number(categoryId))) {
     queryParams.push(Number(categoryId));
     whereClauses.push(`c.category_id = $${queryParams.length}`);
   }
@@ -60,40 +63,42 @@ export default async function CoursesPage({ searchParams }) {
   }
 
   queryStr += `
-    GROUP BY c.id, cat.name, cat.id, u.username, u.email
+    GROUP BY c.id, cat.name, u.username, u.email
     ORDER BY c.created_at DESC
   `;
 
   const coursesRes = await pool.query(queryStr, queryParams);
 
   const courses = coursesRes.rows.map((c) => ({
-    ...c,
-    start_date: c.start_date ? new Date(c.start_date).toLocaleDateString("id-ID") : null,
-    end_date: c.end_date ? new Date(c.end_date).toLocaleDateString("id-ID") : null,
+    id: c.id,
+    nama_course: c.nama_course,
+    deskripsi: c.deskripsi,
+    category_name: c.category_name,
+    teacher_name: c.teacher_name,
+    teacher_email: c.teacher_email,
+    total_materi: Number(c.total_materi),
+    completed_materi: Number(c.completed_materi),
+    student_count: Number(c.student_count),
+    is_enrolled: c.is_enrolled,
+    is_owner: c.is_owner,
+    start_label: formatDateOnly(c.start_date),
+    end_label: formatDateOnly(c.end_date),
   }));
 
   return (
-    <div className="min-h-screen bg-[#0E0A1E]">
-      <Navbar user={session} />
-      <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
-        <div className="mb-8">
-          <span className="text-xs font-bold uppercase tracking-widest text-amber-400">
-            Eksplorasi Materi
-          </span>
-          <h1 className="mt-1 text-3xl font-black text-white">Katalog Kursus</h1>
-          <p className="mt-1 text-sm text-slate-400">
-            Cari kelas sesuai minat Anda, pantau progres belajar, atau hubungi pengajar langsung.
-          </p>
-        </div>
+    <main className="mx-auto max-w-6xl px-5 py-12 sm:px-8 sm:py-16">
+      <h1 className="text-4xl">Katalog kursus</h1>
+      <p className="mt-2 max-w-xl text-muted">
+        Pilih kelas sesuai minat, ikuti secara berurutan, atau hubungi pengajarnya langsung.
+      </p>
 
-        <CoursesClient
-          courses={courses}
-          categories={categoriesRes.rows}
-          currentSearch={search}
-          currentCategory={categoryId}
-          isLoggedIn={!!session}
-        />
-      </main>
-    </div>
+      <CoursesClient
+        courses={courses}
+        categories={categoriesRes.rows}
+        currentSearch={search}
+        currentCategory={categoryId}
+        isLoggedIn={!!session}
+      />
+    </main>
   );
 }
