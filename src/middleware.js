@@ -4,47 +4,33 @@ import { jwtVerify } from "jose";
 const secretKey = process.env.SESSION_SECRET || "ruangkode-secret-key-minimal-32-karakter";
 const encodedKey = new TextEncoder().encode(secretKey);
 
+// Middleware hanya memeriksa apakah tanda masuk (JWT) valid. Ia berjalan di Edge dan
+// tidak boleh membuka koneksi PostgreSQL. Pemeriksaan role dilakukan di tiap halaman
+// dan route handler lewat getSession(), yang membaca role terbaru dari database.
 export async function middleware(request) {
   const { pathname } = request.nextUrl;
-  const sessionCookie = request.cookies.get("session")?.value;
+  const token = request.cookies.get("session")?.value;
 
-  let user = null;
-  if (sessionCookie) {
+  let loggedIn = false;
+  if (token) {
     try {
-      const { payload } = await jwtVerify(sessionCookie, encodedKey, {
-        algorithms: ["HS256"],
-      });
-      user = payload;
+      await jwtVerify(token, encodedKey, { algorithms: ["HS256"] });
+      loggedIn = true;
     } catch {
-      user = null;
+      loggedIn = false;
     }
   }
 
-  // 1. Proteksi halaman private (/profile, /admin, /teacher)
   const isProtected =
     pathname.startsWith("/profile") ||
     pathname.startsWith("/admin") ||
     pathname.startsWith("/teacher");
 
-  if (isProtected && !user) {
+  if (isProtected && !loggedIn) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  // 2. Proteksi khusus role Admin (/admin)
-  if (pathname.startsWith("/admin") && user?.role !== "admin") {
-    return NextResponse.redirect(new URL("/profile", request.url));
-  }
-
-  // 3. Proteksi khusus role Teacher (/teacher) - hanya yang sudah di-approve
-  if (pathname.startsWith("/teacher") && user?.role !== "teacher") {
-    return NextResponse.redirect(new URL("/profile", request.url));
-  }
-
-  // 4. Jika sudah login, cegah akses kembali ke /login atau /register
-  if ((pathname === "/login" || pathname === "/register") && user) {
-    if (user.role === "admin") {
-      return NextResponse.redirect(new URL("/admin", request.url));
-    }
+  if ((pathname === "/login" || pathname === "/register") && loggedIn) {
     return NextResponse.redirect(new URL("/profile", request.url));
   }
 
