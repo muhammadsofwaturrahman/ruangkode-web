@@ -1,158 +1,142 @@
 import Link from "next/link";
 import Image from "next/image";
 import pool from "@/lib/db";
-import { getSession } from "@/lib/session";
-import Navbar from "@/components/Navbar";
+import CourseArt from "@/components/CourseArt";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
-  const session = await getSession();
+  // 5 kursus terpopuler berdasarkan jumlah pendaftar (JOIN + COUNT + GROUP BY)
+  const [popularRes, categoriesRes] = await Promise.all([
+    pool.query(
+      `SELECT c.id, c.nama_course, c.deskripsi,
+              cat.name AS category_name,
+              u.username AS teacher_name,
+              COUNT(e.student_id) AS student_count
+       FROM courses c
+       LEFT JOIN categories cat ON c.category_id = cat.id
+       LEFT JOIN users u ON c.teacher_id = u.id
+       LEFT JOIN enrollments e ON c.id = e.course_id
+       GROUP BY c.id, cat.name, u.username
+       ORDER BY student_count DESC, c.created_at DESC
+       LIMIT 5`
+    ),
+    pool.query("SELECT id, name FROM categories ORDER BY name ASC"),
+  ]);
 
-  // Query 5 kursus terpopuler berdasarkan jumlah pendaftar (COUNT)
-  const popularCoursesRes = await pool.query(
-    `SELECT c.id, c.nama_course, c.deskripsi,
-            cat.name AS category_name,
-            u.username AS teacher_name,
-            COUNT(e.student_id) AS student_count
-     FROM courses c
-     LEFT JOIN categories cat ON c.category_id = cat.id
-     LEFT JOIN users u ON c.teacher_id = u.id
-     LEFT JOIN enrollments e ON c.id = e.course_id
-     GROUP BY c.id, cat.name, u.username
-     ORDER BY student_count DESC, c.created_at DESC
-     LIMIT 5`
-  );
+  const popular = popularRes.rows;
 
   return (
-    <div className="min-h-screen bg-[#0E0A1E]">
-      <Navbar user={session} />
+    <main>
+      <section className="mx-auto grid max-w-6xl items-center gap-10 px-5 pb-16 pt-10 sm:px-8 sm:pt-16 lg:grid-cols-[1.1fr_0.9fr] lg:gap-14">
+        <div>
+          <h1 className="max-w-2xl text-4xl sm:text-5xl lg:text-6xl lg:leading-[1.05]">
+            Belajar coding sampai <span className="text-pine">wisuda</span>, satu bab dalam satu waktu.
+          </h1>
+          <p className="mt-5 max-w-xl text-lg text-muted">
+            Materi disusun berurutan oleh pengajar, progres belajar tercatat otomatis, dan
+            sertifikat terbit begitu seluruh bab selesai.
+          </p>
 
-      {/* HERO SECTION */}
-      <section className="relative overflow-hidden border-b border-[#2E1A47] py-14 lg:py-20">
-        <div className="pointer-events-none absolute right-0 top-0 -z-10 h-72 w-72 rounded-full bg-[#A91079]/15 blur-3xl" />
-        <div className="pointer-events-none absolute left-1/4 top-1/2 -z-10 h-80 w-80 rounded-full bg-[#F806CC]/10 blur-3xl" />
-
-        <div className="mx-auto max-w-6xl px-4 sm:px-6">
-          <div className="grid items-center gap-10 lg:grid-cols-12">
-            <div className="text-center lg:col-span-7 lg:text-left">
-              <span className="inline-block rounded-full border border-purple-500/30 bg-purple-950/40 px-3.5 py-1 text-xs font-bold uppercase tracking-wider text-purple-300">
-                RuangKode Learning Platform
-              </span>
-              <h1 className="mt-4 text-4xl font-extrabold tracking-tight text-white sm:text-5xl lg:text-6xl">
-                Kuasai Coding{" "}
-                <span className="bg-gradient-to-r from-amber-400 via-[#F806CC] to-purple-400 bg-clip-text text-transparent">
-                  Lebih Mudah.
-                </span>
-              </h1>
-              <p className="mx-auto mt-4 max-w-lg text-base text-slate-300 lg:mx-0">
-                Pelajari pemrograman, basis data, dan perancangan sistem lewat materi terstruktur,
-                pelacakan progres otomatis, serta diskusi langsung bersama pengajar.
-              </p>
-              <div className="mt-8 flex flex-wrap justify-center gap-4 lg:justify-start">
-                <Link
-                  href="/courses"
-                  className="rounded-lg bg-gradient-to-r from-[#F806CC] to-[#A91079] px-6 py-3 text-sm font-bold text-white shadow-lg shadow-[#F806CC]/20 transition hover:opacity-90"
-                >
-                  Eksplor Kursus
-                </Link>
-                {!session ? (
-                  <Link
-                    href="/register"
-                    className="rounded-lg border border-[#2E1A47] bg-[#120D26] px-6 py-3 text-sm font-bold text-slate-200 transition hover:border-[#A91079] hover:bg-[#1C143B]"
-                  >
-                    Daftar Gratis
-                  </Link>
-                ) : (
-                  <Link
-                    href="/profile"
-                    className="rounded-lg border border-[#2E1A47] bg-[#120D26] px-6 py-3 text-sm font-bold text-slate-200 transition hover:border-[#A91079] hover:bg-[#1C143B]"
-                  >
-                    Buka Profil Saya
-                  </Link>
-                )}
-              </div>
-            </div>
-
-            {/* Maskot Beruang Memegang Laptop */}
-            <div className="relative flex justify-center lg:col-span-5">
-              <div className="pointer-events-none absolute top-1/2 left-1/2 h-64 w-64 -translate-x-1/2 -translate-y-1/2 rounded-full bg-gradient-to-tr from-[#A91079]/35 via-[#F806CC]/20 to-amber-400/25 blur-3xl" />
-              <Image
-                src="/images/graduation-bear.jpg"
-                  alt="Maskot RuangKode Bear"
-                  width={340}
-                  height={450}
-                  priority
-                  unoptimized
-                  className="relative z-10 h-auto w-64 object-contain mix-blend-lighten sm:w-72"
+          <form action="/courses" method="get" className="mt-9 flex max-w-2xl flex-col gap-3 sm:flex-row">
+            <div className="flex-1">
+              <label htmlFor="home-search" className="sr-only">
+                Cari kursus
+              </label>
+              <input
+                id="home-search"
+                name="search"
+                type="search"
+                placeholder="Cari kursus, misalnya SQL"
+                className="field !h-12 !rounded-full !px-5"
               />
             </div>
-          </div>
-        </div>
-      </section>
-
-      {/* KURSUS TERPOPULER (TOP 5) */}
-      <section className="py-14">
-        <div className="mx-auto max-w-6xl px-4 sm:px-6">
-          <div className="mb-8 flex flex-col justify-between gap-3 sm:flex-row sm:items-end">
-            <div>
-              <h2 className="text-2xl font-black text-white">Kursus Terpopuler</h2>
-              <p className="mt-1 text-sm text-slate-400">
-                Lima kelas dengan jumlah peserta terbanyak di RuangKode saat ini.
-              </p>
+            <div className="sm:w-48">
+              <label htmlFor="home-category" className="sr-only">
+                Kategori
+              </label>
+              <select id="home-category" name="category" defaultValue="" className="field !h-12 !rounded-full !px-5">
+                <option value="">Semua kategori</option>
+                {categoriesRes.rows.map((cat) => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.name}
+                  </option>
+                ))}
+              </select>
             </div>
-            <Link
-              href="/courses"
-              className="text-sm font-semibold text-purple-400 hover:text-[#F806CC] hover:underline"
-            >
-              Lihat Semua Katalog →
+            <button type="submit" className="btn btn-primary !h-12 !rounded-full !px-7">
+              Cari
+            </button>
+          </form>
+
+          <div className="mt-8 flex flex-wrap gap-3">
+            <Link href="/courses" className="btn btn-outline !h-11 !rounded-full !px-6">
+              Jelajahi katalog
+            </Link>
+            <Link href="/register" className="link self-center text-sm font-medium">
+              Belum punya akun? Daftar gratis
             </Link>
           </div>
-          
+        </div>
 
-          {popularCoursesRes.rows.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-[#2E1A47] bg-[#120D26]/50 p-10 text-center text-sm text-slate-400">
-              Belum ada kursus yang tersedia.
-            </div>
-          ) : (
-            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {popularCoursesRes.rows.map((course) => (
-                <div
-                  key={course.id}
-                  className="flex flex-col rounded-2xl border border-[#2E1A47] bg-[#120D26] p-5 shadow-lg shadow-black/30 transition hover:border-[#A91079]"
-                >
-                  <div className="mb-3 flex items-center justify-between">
-                    <span className="rounded-full border border-purple-500/30 bg-purple-950/50 px-2.5 py-0.5 text-xs font-semibold text-purple-300">
-                      {course.category_name || "Umum"}
-                    </span>
-                    <span className="text-xs font-bold text-amber-400">
-                      {course.student_count} Siswa
-                    </span>
-                  </div>
-
-                  <h3 className="line-clamp-1 text-lg font-bold text-white">
-                    {course.nama_course}
-                  </h3>
-                  <p className="mt-2 line-clamp-2 flex-grow text-sm text-slate-400">
-                    {course.deskripsi}
-                  </p>
-
-                  <div className="mt-4 border-t border-[#2E1A47] pt-3 text-xs text-slate-400">
-                    Pengajar: <strong className="text-slate-200">{course.teacher_name}</strong>
-                  </div>
-
-                  <Link
-                    href={`/courses?search=${encodeURIComponent(course.nama_course)}`}
-                    className="mt-4 block rounded-lg bg-[#2E1A47] py-2.5 text-center text-xs font-bold text-white transition hover:bg-[#A91079]"
-                  >
-                    Lihat di Katalog →
-                  </Link>
-                </div>
-              ))}
-            </div>
-          )}
+        <div className="flex justify-center lg:justify-end">
+          <Image
+            src="/images/graduation-bear.png"
+            alt="Maskot RuangKode"
+            width={677}
+            height={1195}
+            priority
+            className="h-auto w-56 object-contain sm:w-64 lg:w-80"
+          />
         </div>
       </section>
-    </div>
+
+      <section className="mx-auto max-w-6xl px-5 sm:px-8">
+        <div className="flex items-end justify-between gap-4">
+          <div>
+            <p className="text-sm font-semibold text-magenta">Pilihan peserta</p>
+            <h2 className="mt-1 text-3xl">Kursus terpopuler</h2>
+          </div>
+          <Link href="/courses" className="link text-sm font-medium">
+            Lihat semua kursus
+          </Link>
+        </div>
+
+        {popular.length === 0 ? (
+          <p className="py-10 text-muted">Belum ada kursus yang tersedia.</p>
+        ) : (
+          <ol className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {popular.map((course, index) => (
+              <li key={course.id}>
+                <Link
+                  href={`/courses?search=${encodeURIComponent(course.nama_course)}`}
+                  className="course-card group h-full"
+                >
+                  <div className="relative">
+                    <CourseArt seed={course.id} className="h-44" />
+                    <span className="absolute left-4 top-4 flex h-9 w-9 items-center justify-center rounded-full bg-white/90 text-sm font-extrabold text-[#7a0f58]">
+                      {index + 1}
+                    </span>
+                    <span className="absolute right-4 top-4 rounded-full bg-black/35 px-3 py-1 text-xs font-semibold text-white backdrop-blur">
+                      {course.category_name || "Umum"}
+                    </span>
+                  </div>
+                  <div className="flex flex-1 flex-col p-5">
+                    <h3 className="text-xl group-hover:text-pine">{course.nama_course}</h3>
+                    <p className="mb-5 mt-2 line-clamp-2 text-sm leading-6 text-muted">{course.deskripsi}</p>
+                    <div className="mt-auto flex items-center justify-between gap-3 border-t border-line pt-4 text-sm text-muted">
+                      <span className="truncate">Pengajar: {course.teacher_name}</span>
+                      <span className="shrink-0">
+                        <span className="font-semibold text-ink">{course.student_count}</span> peserta
+                      </span>
+                    </div>
+                  </div>
+                </Link>
+              </li>
+            ))}
+          </ol>
+        )}
+      </section>
+    </main>
   );
 }
