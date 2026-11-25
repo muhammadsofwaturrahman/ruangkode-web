@@ -11,15 +11,25 @@ export default async function TeacherPage() {
   if (!session) {
     redirect("/api/auth/logout");
   }
-  // Pendaftar Teacher yang belum di-approve masih berstatus student.
-  if (session.role !== "teacher") {
+
+  // Ambil role terbaru & cek apakah baru di-approve (< 24 jam)
+  const userRes = await pool.query(
+    `SELECT role,
+            (approved_at IS NOT NULL AND approved_at > NOW() - INTERVAL '24 hours') AS is_new_teacher
+     FROM users
+     WHERE id = $1`,
+    [session.id]
+  );
+  const currentUser = userRes.rows[0];
+
+  if (!currentUser || currentUser.role !== "teacher") {
     redirect("/profile");
   }
 
   // 1. Kategori untuk dropdown
   const categoriesRes = await pool.query("SELECT id, name FROM categories ORDER BY name ASC");
 
-  // 2. Kursus milik teacher ini (tanggal dibaca sebagai teks agar tidak bergeser zona waktu)
+  // 2. Kursus milik teacher ini
   const coursesRes = await pool.query(
     `SELECT c.id, c.nama_course, c.deskripsi, c.category_id,
             c.start_date::text AS start_date, c.end_date::text AS end_date,
@@ -81,6 +91,15 @@ export default async function TeacherPage() {
 
   return (
     <main className="mx-auto max-w-5xl px-5 py-12 sm:px-8 sm:py-16">
+      {currentUser.is_new_teacher && (
+        <div role="status" className="notice notice-ok mb-8">
+          <p className="font-medium">Selamat datang, Teacher. Akun Anda baru saja disetujui Admin.</p>
+          <p className="mt-0.5 text-muted">
+            Silakan mulai membuat kursus pertama dan menyusun materi pembelajaran Anda di bawah ini.
+          </p>
+        </div>
+      )}
+
       <h1 className="text-4xl">Dashboard Teacher</h1>
       <p className="mt-2 max-w-xl text-muted">
         Buat kursus, susun materi berurutan, dan pantau progres belajar siswa Anda.
