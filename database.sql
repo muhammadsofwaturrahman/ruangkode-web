@@ -2,7 +2,7 @@
 -- DATABASE SCHEMA & SEED DATA: RUANGKODE PLATFORM KURSUS
 -- File berada di root repository (di luar folder src/app)
 -- Password semua akun dummy di bawah adalah: password123
--- (Sudah di-hash menggunakan bcryptjs 10 rounds)
+-- (Sudah di-hash dengan bcrypt, 10 rounds, kompatibel dengan bcryptjs)
 -- ==========================================================
 
 DROP TABLE IF EXISTS certificates CASCADE;
@@ -99,11 +99,11 @@ CREATE TABLE certificates (
 -- ==========================================================
 
 INSERT INTO users (username, email, password, role, teacher_status, approved_at) VALUES
-('Admin RuangKode', 'admin@ruangkode.com', '$2b$10$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW', 'admin', 'none', NULL),
-('Budi Santoso', 'budi.teacher@ruangkode.com', '$2b$10$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW', 'teacher', 'approved', NOW() - INTERVAL '5 days'),
-('Siti Aminah', 'siti.teacher@ruangkode.com', '$2b$10$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW', 'teacher', 'approved', NOW() - INTERVAL '2 hours'),
-('Andi Pratama', 'andi.student@ruangkode.com', '$2b$10$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW', 'student', 'none', NULL),
-('Rina Calon Guru', 'rina.pending@ruangkode.com', '$2b$10$EixZaYVK1fsbw1ZfbX3OXePaWxn96p36WQoeG6Lruj3vjPGga31lW', 'student', 'pending', NULL);
+('Admin RuangKode', 'admin@ruangkode.com', '$2b$10$VCyMJogq6vrQ.BfwpwISUOTgokvypP7rf6Yz32WknSQlb4M4Z1KvC', 'admin', 'none', NULL),
+('Budi Santoso', 'budi.teacher@ruangkode.com', '$2b$10$VCyMJogq6vrQ.BfwpwISUOTgokvypP7rf6Yz32WknSQlb4M4Z1KvC', 'teacher', 'approved', NOW() - INTERVAL '5 days'),
+('Siti Aminah', 'siti.teacher@ruangkode.com', '$2b$10$VCyMJogq6vrQ.BfwpwISUOTgokvypP7rf6Yz32WknSQlb4M4Z1KvC', 'teacher', 'approved', NOW() - INTERVAL '2 hours'),
+('Andi Pratama', 'andi.student@ruangkode.com', '$2b$10$VCyMJogq6vrQ.BfwpwISUOTgokvypP7rf6Yz32WknSQlb4M4Z1KvC', 'student', 'none', NULL),
+('Rina Calon Guru', 'rina.pending@ruangkode.com', '$2b$10$VCyMJogq6vrQ.BfwpwISUOTgokvypP7rf6Yz32WknSQlb4M4Z1KvC', 'student', 'pending', NULL);
 
 INSERT INTO categories (name, description) VALUES
 ('Web Development', 'Pengembangan aplikasi web modern frontend dan backend'),
