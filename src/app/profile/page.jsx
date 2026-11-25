@@ -2,32 +2,33 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import pool from "@/lib/db";
 import { getSession } from "@/lib/session";
-import Navbar from "@/components/Navbar";
+import { formatDate, percentOf } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
+export const metadata = { title: "Profil" };
+
+const ROLE_LABEL = { admin: "Admin", teacher: "Teacher", student: "Student" };
 
 export default async function ProfilePage() {
   const session = await getSession();
   if (!session) {
-    redirect("/login");
+    // Cookie masih ada tetapi akun sudah dihapus: bersihkan cookie lalu ke halaman login.
+    redirect("/api/auth/logout");
   }
 
-  // 1. Ambil data terbaru user
+  // 1. Data akun. Logika "Welcome Teacher": approved_at kurang dari 24 jam yang lalu.
   const userRes = await pool.query(
-    `SELECT id, username, email, role
+    `SELECT id, username, email, role, teacher_status,
+            (approved_at IS NOT NULL AND approved_at > NOW() - INTERVAL '24 hours') AS is_new_teacher
      FROM users
      WHERE id = $1`,
     [session.id]
   );
-
   const user = userRes.rows[0];
-  if (!user) {
-    redirect("/login");
-  }
 
-  // 2. Ambil daftar kursus yang diikuti user beserta progres belajarnya
+  // 2. Kursus yang diikuti beserta progresnya
   const enrolledCoursesRes = await pool.query(
-    `SELECT c.id, c.nama_course, c.deskripsi,
+    `SELECT c.id, c.nama_course,
             cat.name AS category_name,
             t.username AS teacher_name,
             COUNT(DISTINCT cnt.id) AS total_materi,
@@ -46,241 +47,272 @@ export default async function ProfilePage() {
     [user.id]
   );
 
-  // 3. Ambil daftar sertifikat yang sudah diterbitkan untuk user
+  // 3. Sertifikat yang sudah terbit
   const certsRes = await pool.query(
-    `SELECT cert.certificate_code, cert.issued_at,
-            c.id AS course_id, c.nama_course,
-            cat.name AS category_name
+    `SELECT cert.certificate_code, cert.issued_at, c.nama_course
      FROM certificates cert
      JOIN courses c ON cert.course_id = c.id
-     LEFT JOIN categories cat ON c.category_id = cat.id
      WHERE cert.student_id = $1
      ORDER BY cert.issued_at DESC`,
     [user.id]
   );
 
+  // 4. Khusus Teacher: kursus yang diajar beserta progres tiap siswa
+  let taught = [];
+  if (user.role === "teacher") {
+    const taughtRes = await pool.query(
+      `SELECT c.id AS course_id, c.nama_course,
+              (SELECT COUNT(*) FROM contents WHERE course_id = c.id) AS total_materi,
+              u.id AS student_id, u.username,
+              COUNT(DISTINCT cp.content_id) AS selesai_materi
+       FROM courses c
+       LEFT JOIN enrollments e ON e.course_id = c.id
+       LEFT JOIN users u ON u.id = e.student_id
+       LEFT JOIN contents cnt ON cnt.course_id = c.id
+       LEFT JOIN content_progress cp ON cp.content_id = cnt.id AND cp.student_id = u.id
+       WHERE c.teacher_id = $1
+       GROUP BY c.id, u.id
+       ORDER BY c.created_at DESC, u.username ASC`,
+      [user.id]
+    );
+
+    const byCourse = new Map();
+    for (const row of taughtRes.rows) {
+      if (!byCourse.has(row.course_id)) {
+        byCourse.set(row.course_id, {
+          id: row.course_id,
+          nama_course: row.nama_course,
+          total_materi: Number(row.total_materi),
+          students: [],
+        });
+      }
+      if (row.student_id) {
+        const course = byCourse.get(row.course_id);
+        course.students.push({
+          id: row.student_id,
+          username: row.username,
+          percent: percentOf(row.selesai_materi, course.total_materi),
+        });
+      }
+    }
+    taught = [...byCourse.values()].map((c) => ({
+      ...c,
+      average: c.students.length
+        ? Math.round(c.students.reduce((sum, s) => sum + s.percent, 0) / c.students.length)
+        : 0,
+    }));
+  }
+
   const enrolledCourses = enrolledCoursesRes.rows;
   const certificates = certsRes.rows;
 
-  const roleBadgeClass =
-    user.role === "admin"
-      ? "border-amber-400/40 bg-amber-500/15 text-amber-300"
-      : user.role === "teacher"
-      ? "border-purple-400/40 bg-purple-500/15 text-purple-300"
-      : "border-fuchsia-400/40 bg-fuchsia-500/15 text-fuchsia-300";
-
   return (
-    <div className="min-h-screen bg-[#0E0A1E] text-slate-100">
-      <Navbar user={session} />
+    <main className="mx-auto max-w-5xl px-5 py-12 sm:px-8 sm:py-16">
+      {user.teacher_status === "pending" && (
+        <div role="status" className="notice notice-warn mb-8">
+          <p className="font-medium">Akun Pengajar Anda sedang menunggu verifikasi Admin.</p>
+          <p className="mt-0.5 text-muted">
+            Sementara itu Anda tetap bisa mengikuti kursus sebagai student.
+          </p>
+        </div>
+      )}
 
-      <main className="mx-auto max-w-6xl space-y-8 px-4 py-10 sm:px-6">
-        {/* KARTU PROFIL AKUN */}
-        <section className="relative overflow-hidden rounded-2xl border border-[#2E1A47] bg-[#120D26] p-6 shadow-xl shadow-black/30 sm:p-8">
-          <div className="pointer-events-none absolute -top-20 -right-20 h-56 w-56 rounded-full bg-[#A91079]/15 blur-3xl" />
+      {user.role === "teacher" && user.is_new_teacher && (
+        <div role="status" className="notice notice-ok mb-8">
+          <p className="font-medium">Selamat datang, Teacher. Akun Anda baru saja disetujui Admin.</p>
+          <p className="mt-0.5 text-muted">
+            Mulai dengan membuat kursus pertama Anda di{" "}
+            <Link href="/teacher" className="link">
+              dashboard Teacher
+            </Link>
+            .
+          </p>
+        </div>
+      )}
 
-          <div className="relative z-10 flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <div className="flex items-center gap-3">
-                <h1 className="text-2xl font-black text-white sm:text-3xl">
-                  {user.username}
-                </h1>
-                <span
-                  className={`rounded-full border px-3 py-0.5 text-xs font-bold uppercase tracking-wider ${roleBadgeClass}`}
-                >
-                  {user.role}
-                </span>
-              </div>
-              <p className="mt-1 text-sm text-slate-400">{user.email}</p>
-            </div>
+      <header className="flex flex-wrap items-end justify-between gap-5">
+        <div>
+          <h1 className="text-4xl">{user.username}</h1>
+          <p className="mt-2 flex flex-wrap items-center gap-3 text-muted">
+            <span>{user.email}</span>
+            <span className="badge">{ROLE_LABEL[user.role]}</span>
+            {user.teacher_status === "pending" && <span className="badge badge-warn">Menunggu verifikasi</span>}
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-3">
+          {user.role === "admin" && (
+            <Link href="/admin" className="btn btn-outline">
+              Dashboard Admin
+            </Link>
+          )}
+          {user.role === "teacher" && (
+            <Link href="/teacher" className="btn btn-outline">
+              Dashboard Teacher
+            </Link>
+          )}
+          <Link href="/courses" className="btn btn-primary">
+            Buka katalog
+          </Link>
+        </div>
+      </header>
 
-            <div className="flex flex-wrap gap-2.5">
-              {user.role === "admin" && (
-                <Link
-                  href="/admin"
-                  className="rounded-lg border border-amber-400/40 bg-amber-500/10 px-4 py-2 text-xs font-bold text-amber-300 transition hover:bg-amber-500/20"
-                >
-                  Buka Dashboard Admin
-                </Link>
-              )}
-              {user.role === "teacher" && (
-                <Link
-                  href="/teacher"
-                  className="rounded-lg border border-purple-400/40 bg-purple-500/10 px-4 py-2 text-xs font-bold text-purple-300 transition hover:bg-purple-500/20"
-                >
-                  Buka Dashboard Teacher
-                </Link>
-              )}
-              <Link
-                href="/courses"
-                className="rounded-lg bg-gradient-to-r from-[#F806CC] to-[#A91079] px-4 py-2 text-xs font-bold text-white shadow-lg shadow-[#F806CC]/20 transition hover:opacity-90"
-              >
-                Eksplor Katalog Kursus
+      <dl className="mt-10 flex gap-12 border-y border-line py-5">
+        <div>
+          <dt className="text-sm text-muted">Kursus diikuti</dt>
+          <dd className="mt-0.5 font-serif text-3xl">{enrolledCourses.length}</dd>
+        </div>
+        <div>
+          <dt className="text-sm text-muted">Sertifikat</dt>
+          <dd className="mt-0.5 font-serif text-3xl">{certificates.length}</dd>
+        </div>
+        {user.role === "teacher" && (
+          <div>
+            <dt className="text-sm text-muted">Kursus diajar</dt>
+            <dd className="mt-0.5 font-serif text-3xl">{taught.length}</dd>
+          </div>
+        )}
+      </dl>
+
+      {/* Teacher: kursus yang diajar dan progres siswa */}
+      {user.role === "teacher" && (
+        <section className="mt-14">
+          <h2 className="text-2xl">Kursus yang Anda ajar</h2>
+
+          {taught.length === 0 ? (
+            <p className="mt-4 text-muted">
+              Anda belum membuat kursus.{" "}
+              <Link href="/teacher" className="link">
+                Buat kursus pertama
               </Link>
-            </div>
-          </div>
-
-          {/* Ringkasan Statistik */}
-          <div className="relative z-10 mt-6 grid gap-4 border-t border-[#2E1A47] pt-6 sm:grid-cols-2">
-            <div className="rounded-xl border border-[#2E1A47] bg-[#0E0A1E] p-4">
-              <span className="text-xs text-slate-400">Kursus Diikuti</span>
-              <p className="mt-1 text-2xl font-black text-white">
-                {enrolledCourses.length}
-              </p>
-            </div>
-            <div className="rounded-xl border border-[#2E1A47] bg-[#0E0A1E] p-4">
-              <span className="text-xs text-slate-400">Sertifikat Diraih</span>
-              <p className="mt-1 text-2xl font-black text-amber-400">
-                {certificates.length}
-              </p>
-            </div>
-          </div>
-        </section>
-
-        {/* DAFTAR SERTIFIKAT KELULUSAN */}
-        <section className="rounded-2xl border border-[#2E1A47] bg-[#120D26] p-6 shadow-lg shadow-black/25">
-          <div className="mb-4 flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-bold text-white">Sertifikat Kelulusan</h2>
-              <p className="text-xs text-slate-400">
-                Sertifikat otomatis terbit saat progres belajar pada sebuah kursus mencapai 100%.
-              </p>
-            </div>
-          </div>
-
-          {certificates.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-[#2E1A47] bg-[#0E0A1E]/60 p-6 text-center text-sm text-slate-400">
-              Belum ada sertifikat. Selesaikan 100% materi pada salah satu kursus untuk mendapatkan sertifikat.
-            </div>
+              .
+            </p>
           ) : (
-            <div className="grid gap-4 sm:grid-cols-2">
-              {certificates.map((cert) => (
-                <Link
-                  key={cert.certificate_code}
-                  href={`/certificates/${cert.certificate_code}`}
-                  className="group flex items-center justify-between gap-4 rounded-xl border border-amber-400/30 bg-[#0E0A1E] p-4 transition hover:border-amber-400"
-                >
-                  <div className="min-w-0">
-                    {cert.category_name && (
-                      <span className="inline-block rounded-full border border-purple-500/30 bg-purple-950/50 px-2 py-0.5 text-[10px] font-semibold text-purple-300">
-                        {cert.category_name}
-                      </span>
-                    )}
-                    <h3 className="mt-1.5 truncate text-sm font-bold text-white">
-                      {cert.nama_course}
-                    </h3>
-                    <p className="mt-0.5 font-mono text-xs text-amber-400">
-                      {cert.certificate_code}
-                    </p>
-                    <p className="mt-1 text-[11px] text-slate-500">
-                      Diterbitkan:{" "}
-                      {new Date(cert.issued_at).toLocaleDateString("id-ID", {
-                        day: "numeric",
-                        month: "long",
-                        year: "numeric",
-                      })}
+            <ul className="mt-4 border-t border-line">
+              {taught.map((course) => (
+                <li key={course.id} className="border-b border-line py-6">
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <h3 className="text-xl">{course.nama_course}</h3>
+                    <p className="text-sm text-muted">
+                      {course.students.length} peserta, rata-rata progres{" "}
+                      <span className="font-medium text-ink">{course.average}%</span>
                     </p>
                   </div>
-                  <span className="shrink-0 text-xs font-bold text-[#F806CC] transition group-hover:translate-x-0.5">
-                    Buka →
-                  </span>
-                </Link>
+
+                  {course.students.length === 0 ? (
+                    <p className="mt-3 text-sm text-muted">Belum ada peserta.</p>
+                  ) : (
+                    <ul className="mt-4 grid gap-x-10 gap-y-3 sm:grid-cols-2">
+                      {course.students.map((s) => (
+                        <li key={s.id}>
+                          <div className="mb-1 flex justify-between text-sm">
+                            <span>{s.username}</span>
+                            <span className="text-muted">{s.percent}%</span>
+                          </div>
+                          <div className="progress">
+                            <span style={{ width: `${s.percent}%` }} />
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
               ))}
-            </div>
+            </ul>
           )}
         </section>
+      )}
 
-        {/* DAFTAR KURSUS YANG DIIKUTI */}
-        <section className="rounded-2xl border border-[#2E1A47] bg-[#120D26] p-6 shadow-lg shadow-black/25">
-          <h2 className="mb-4 text-lg font-bold text-white">Kursus Saya</h2>
+      {/* Kursus yang diikuti */}
+      {(user.role !== "teacher" || enrolledCourses.length > 0) && (
+        <section className="mt-14">
+          <h2 className="text-2xl">Kursus yang Anda ikuti</h2>
 
           {enrolledCourses.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-[#2E1A47] bg-[#0E0A1E]/60 p-8 text-center">
-              <p className="text-sm text-slate-400">
-                Anda belum mengikuti kursus apa pun.
-              </p>
-              <Link
-                href="/courses"
-                className="mt-4 inline-block rounded-lg bg-gradient-to-r from-[#F806CC] to-[#A91079] px-5 py-2 text-xs font-bold text-white transition hover:opacity-90"
-              >
-                Cari Kursus Sekarang
+            <div className="mt-4 text-muted">
+              <p>Anda belum mengikuti kursus apa pun.</p>
+              <Link href="/courses" className="btn btn-primary mt-4">
+                Cari kursus
               </Link>
             </div>
           ) : (
-            <div className="grid gap-4 md:grid-cols-2">
+            <ul className="mt-4 border-t border-line">
               {enrolledCourses.map((course) => {
                 const total = Number(course.total_materi);
                 const selesai = Number(course.selesai_materi);
-                const percent = total > 0 ? Math.round((selesai / total) * 100) : 0;
+                const percent = percentOf(selesai, total);
 
                 return (
-                  <div
+                  <li
                     key={course.id}
-                    className="flex flex-col justify-between rounded-xl border border-[#2E1A47] bg-[#0E0A1E] p-5 transition hover:border-[#A91079]"
+                    className="grid gap-5 border-b border-line py-6 md:grid-cols-[1fr_15rem] md:gap-10"
                   >
                     <div>
-                      <div className="mb-2 flex items-center justify-between gap-2">
-                        <span className="rounded-full border border-purple-500/30 bg-purple-950/50 px-2.5 py-0.5 text-[11px] font-semibold text-purple-300">
-                          {course.category_name || "Umum"}
-                        </span>
-                        <span
-                          className={`text-xs font-bold ${
-                            percent === 100 ? "text-emerald-400" : "text-amber-400"
-                          }`}
-                        >
-                          {percent}% Selesai
-                        </span>
-                      </div>
-
-                      <h3 className="text-base font-bold text-white">
-                        {course.nama_course}
-                      </h3>
-                      <p className="mt-1 line-clamp-2 text-xs text-slate-400">
-                        {course.deskripsi}
-                      </p>
-                      <p className="mt-2 text-[11px] text-slate-500">
-                        Pengajar:{" "}
-                        <span className="text-slate-300">{course.teacher_name}</span>
-                      </p>
+                      <p className="text-sm font-medium text-pine">{course.category_name || "Umum"}</p>
+                      <h3 className="mt-1 text-xl">{course.nama_course}</h3>
+                      <p className="mt-1 text-sm text-muted">Pengajar: {course.teacher_name}</p>
                     </div>
-
-                    <div className="mt-4">
-                      <div className="mb-1.5 flex justify-between text-[11px] text-slate-400">
-                        <span>Progres Materi</span>
-                        <span>
-                          {selesai} / {total} bab
+                    <div>
+                      <div className="mb-1.5 flex justify-between text-sm">
+                        <span className="text-muted">
+                          {selesai} dari {total} bab
                         </span>
+                        <span className="font-medium">{percent}%</span>
                       </div>
-                      <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#1C143B]">
-                        <div
-                          className="h-full bg-gradient-to-r from-[#F806CC] to-emerald-400 transition-all"
-                          style={{ width: `${percent}%` }}
-                        />
+                      <div className="progress">
+                        <span style={{ width: `${percent}%` }} />
                       </div>
-
                       <div className="mt-4 flex gap-2">
-                        <Link
-                          href={`/courses/${course.id}`}
-                          className="flex-1 rounded-lg bg-[#2E1A47] py-2 text-center text-xs font-bold text-white transition hover:bg-[#A91079]"
-                        >
-                          {percent === 100 ? "Ulas Kembali" : "Lanjutkan Belajar →"}
+                        <Link href={`/courses/${course.id}`} className="btn btn-outline btn-sm flex-1">
+                          {percent === 100 ? "Tinjau kembali" : "Lanjutkan belajar"}
                         </Link>
                         {course.certificate_code && (
                           <Link
                             href={`/certificates/${course.certificate_code}`}
-                            className="rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-xs font-bold text-amber-300 transition hover:bg-amber-500/20"
+                            className="btn btn-primary btn-sm"
                           >
                             Sertifikat
                           </Link>
                         )}
                       </div>
                     </div>
-                  </div>
+                  </li>
                 );
               })}
-            </div>
+            </ul>
           )}
         </section>
-      </main>
-    </div>
+      )}
+
+      {/* Sertifikat */}
+      <section className="mt-14">
+        <h2 className="text-2xl">Sertifikat</h2>
+        {certificates.length === 0 ? (
+          <p className="mt-4 max-w-xl text-muted">
+            Belum ada sertifikat. Sertifikat terbit otomatis saat seluruh bab pada sebuah kursus
+            selesai.
+          </p>
+        ) : (
+          <ul className="mt-4 border-t border-line">
+            {certificates.map((cert) => (
+              <li
+                key={cert.certificate_code}
+                className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1 border-b border-line py-4"
+              >
+                <div>
+                  <p className="font-medium">{cert.nama_course}</p>
+                  <p className="mt-0.5 font-mono text-sm text-muted">{cert.certificate_code}</p>
+                </div>
+                <div className="flex items-baseline gap-5 text-sm">
+                  <span className="text-muted">Terbit {formatDate(cert.issued_at)}</span>
+                  <Link href={`/certificates/${cert.certificate_code}`} className="link font-medium">
+                    Buka
+                  </Link>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </main>
   );
 }
