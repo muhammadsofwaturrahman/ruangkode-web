@@ -1,25 +1,28 @@
 import { redirect } from "next/navigation";
 import pool from "@/lib/db";
 import { getSession } from "@/lib/session";
-import Navbar from "@/components/Navbar";
 import TeacherClient from "./TeacherClient";
 
 export const dynamic = "force-dynamic";
+export const metadata = { title: "Dashboard Teacher" };
 
 export default async function TeacherPage() {
   const session = await getSession();
-  if (!session || session.role !== "teacher") {
+  if (!session) {
+    redirect("/api/auth/logout");
+  }
+  // Pendaftar Teacher yang belum di-approve masih berstatus student.
+  if (session.role !== "teacher") {
     redirect("/profile");
   }
 
-  // 1. Ambil daftar kategori
-  const categoriesRes = await pool.query(
-    "SELECT id, name FROM categories ORDER BY name ASC"
-  );
+  // 1. Kategori untuk dropdown
+  const categoriesRes = await pool.query("SELECT id, name FROM categories ORDER BY name ASC");
 
-  // 2. Ambil daftar kursus milik teacher ini
+  // 2. Kursus milik teacher ini (tanggal dibaca sebagai teks agar tidak bergeser zona waktu)
   const coursesRes = await pool.query(
-    `SELECT c.id, c.nama_course, c.deskripsi, c.category_id, c.start_date, c.end_date,
+    `SELECT c.id, c.nama_course, c.deskripsi, c.category_id,
+            c.start_date::text AS start_date, c.end_date::text AS end_date,
             cat.name AS category_name,
             COUNT(DISTINCT e.student_id) AS total_students,
             COUNT(DISTINCT cnt.id) AS total_materi
@@ -29,17 +32,19 @@ export default async function TeacherPage() {
      LEFT JOIN contents cnt ON cnt.course_id = c.id
      WHERE c.teacher_id = $1
      GROUP BY c.id, cat.name
-     ORDER BY c.created_at DESC`,
+     ORDER BY c.created_at DESC, c.id DESC`,
     [session.id]
   );
 
   const courses = coursesRes.rows.map((c) => ({
     ...c,
-    start_date: c.start_date ? new Date(c.start_date).toISOString().split("T")[0] : "",
-    end_date: c.end_date ? new Date(c.end_date).toISOString().split("T")[0] : "",
+    start_date: c.start_date || "",
+    end_date: c.end_date || "",
+    total_students: Number(c.total_students),
+    total_materi: Number(c.total_materi),
   }));
 
-  // 3. Ambil semua materi untuk kursus milik teacher ini
+  // 3. Semua materi pada kursus milik teacher ini
   const contentsRes = await pool.query(
     `SELECT cnt.id, cnt.course_id, cnt.judul, cnt.isi_materi, cnt.order_index
      FROM contents cnt
@@ -49,7 +54,7 @@ export default async function TeacherPage() {
     [session.id]
   );
 
-  // 4. Ambil daftar siswa & progres per kursus milik teacher ini
+  // 4. Siswa dan progres per kursus
   const studentsRes = await pool.query(
     `SELECT e.course_id, u.id AS student_id, u.username, u.email,
             COUNT(DISTINCT cnt.id) AS total_materi,
@@ -65,27 +70,28 @@ export default async function TeacherPage() {
     [session.id]
   );
 
-  return (
-    <div className="min-h-screen bg-[#0E0A1E] text-slate-100">
-      <Navbar user={session} />
-      <main className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-        <div className="mb-6">
-          <span className="text-xs font-bold uppercase tracking-widest text-amber-400">
-            Teacher Workspace
-          </span>
-          <h1 className="mt-1 text-2xl font-black text-white">Dashboard Teacher</h1>
-          <p className="text-sm text-slate-400">
-            Buat dan kelola kursus, susun materi pembelajaran berurutan, serta pantau progres siswa.
-          </p>
-        </div>
+  const students = studentsRes.rows.map((s) => ({
+    course_id: s.course_id,
+    student_id: s.student_id,
+    username: s.username,
+    email: s.email,
+    total_materi: Number(s.total_materi),
+    selesai_materi: Number(s.selesai_materi),
+  }));
 
-        <TeacherClient
-          categories={categoriesRes.rows}
-          courses={courses}
-          contents={contentsRes.rows}
-          students={studentsRes.rows}
-        />
-      </main>
-    </div>
+  return (
+    <main className="mx-auto max-w-5xl px-5 py-12 sm:px-8 sm:py-16">
+      <h1 className="text-4xl">Dashboard Teacher</h1>
+      <p className="mt-2 max-w-xl text-muted">
+        Buat kursus, susun materi berurutan, dan pantau progres belajar siswa Anda.
+      </p>
+
+      <TeacherClient
+        categories={categoriesRes.rows}
+        courses={courses}
+        contents={contentsRes.rows}
+        students={students}
+      />
+    </main>
   );
 }
